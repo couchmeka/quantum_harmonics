@@ -2,6 +2,8 @@
 
 # Quantum Harmonics Application
 
+Discord https://discord.gg/bPgh5xKj
+
 ## analysis directory
 
 ## audio directory
