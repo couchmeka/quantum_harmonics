@@ -13,12 +13,16 @@ class StandardizedDataHandler:
             "quantum_metrics": {
                 "purity": results.get("purity", 0.0),
                 "fidelity": results.get("fidelity", 0.0),
+                "coherence_time": results.get("coherence_time", 0.0),
+                "gate_fidelities": results.get("gate_fidelities", {}),
+                "decoherence_rate": results.get("decoherence_rate", 0.0),
             },
             "frequencies": results.get("frequencies", []),
             "amplitudes": results.get("amplitudes", []),
             "statevector": results.get("statevector", []),
             "phases": results.get("phases", []),
-            "analysis_type": "quantum",
+            "circuit_data": results.get("circuit_data", {}),
+            "noise_levels": results.get("noise_levels", {}),
         }
 
     @staticmethod
@@ -31,7 +35,12 @@ class StandardizedDataHandler:
             "notes": results.get("notes", []),
             "frequencies": results.get("frequencies", []),
             "musical_systems": results.get("musical_systems", {}),
+            "eigenvalues": results.get("eigenvalues", []),
+            "wave_solution": results.get("wave_solution", []),
+            "t": results.get("t", []),
             "analysis_type": "melody",
+            "note_combinations": results.get("note_combinations", {}),
+            "harmonic_ratios": results.get("harmonic_ratios", {}),
         }
 
     @staticmethod
@@ -67,7 +76,22 @@ class StandardizedDataHandler:
         }
 
     @staticmethod
-    def combine_results(quantum=None, melody=None, fluid=None, qec=None):
+    def format_particle_results(results):
+        """Standardize particle simulation results"""
+        if not results:
+            return None
+
+        return {
+            "positions": results.get("positions", []),
+            "velocities": results.get("velocities", []),
+            "accelerations": results.get("accelerations", []),
+            "mode": results.get("mode", ""),
+            "time": results.get("time", 0),
+            "analysis_type": "particle",
+        }
+
+    @staticmethod
+    def combine_results(quantum=None, melody=None, fluid=None, qec=None, particle=None):
         """Combine all results into a standardized format"""
         combined = {"timestamp": datetime.now().isoformat(), "analysis_results": {}}
 
@@ -86,6 +110,10 @@ class StandardizedDataHandler:
         if qec:
             combined["analysis_results"]["qec"] = (
                 StandardizedDataHandler.format_qec_results(qec)
+            )
+        if particle:
+            combined["analysis_results"]["particle"] = (
+                StandardizedDataHandler.format_particle_results(particle)
             )
 
         return combined

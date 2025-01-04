@@ -191,9 +191,9 @@ class ParticleSimulator:
 
         # Extract quantum properties
         statevector = quantum_data["statevector"]
-        phases = quantum_data["phases"]
+        # phases = quantum_data["phases"]
         frequencies = quantum_data["frequencies"]
-        pythagorean = quantum_data["pythagorean_analysis"]
+        # pythagorean = quantum_data["pythagorean_analysis"]
 
         # Calculate quantum influence factors
         purity = quantum_data["quantum_metrics"]["purity"]

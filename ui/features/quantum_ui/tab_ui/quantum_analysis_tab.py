@@ -2,9 +2,19 @@
 import librosa
 import numpy as np
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QLabel, QSlider, QTextEdit, QGroupBox, QApplication,  # Add QApplication here
-                             QFileDialog, QMessageBox)
+from PyQt6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QSlider,
+    QTextEdit,
+    QGroupBox,
+    QApplication,  # Add QApplication here
+    QFileDialog,
+    QMessageBox,
+)
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from qiskit import QuantumRegister, ClassicalRegister, QuantumCircuit, transpile
@@ -34,7 +44,7 @@ class QuantumAnalysisTab(QWidget):
 
         # Initialize matplotlib figure and canvas
         self.figure = Figure(figsize=(15, 12))
-        self.figure.patch.set_facecolor('#ffffff')  # Dark background
+        self.figure.patch.set_facecolor("#ffffff")  # Dark background
         self.canvas = FigureCanvas(self.figure)
 
         # Initialize quantum state visualizer with the figure
@@ -61,7 +71,8 @@ class QuantumAnalysisTab(QWidget):
 
         # Controls group
         controls_group = QGroupBox("Analysis Controls")
-        controls_group.setStyleSheet("""
+        controls_group.setStyleSheet(
+            """
             QGroupBox {
                 color: white;
                 font-size: 14px;
@@ -70,7 +81,8 @@ class QuantumAnalysisTab(QWidget):
                 padding: 15px;
                 background-color: rgba(61, 64, 94, 0.3);
             }
-        """)
+        """
+        )
         controls_group.setMaximumHeight(160)
         controls_layout = QVBoxLayout()
 
@@ -149,8 +161,11 @@ class QuantumAnalysisTab(QWidget):
 
         # Create a More Info button
         self.more_info_btn = QPushButton()
-        self.more_info_btn.setIcon(qta.icon('fa.question-circle', color='#2196F3'))  # Set blue color
-        self.more_info_btn.setStyleSheet("""
+        self.more_info_btn.setIcon(
+            qta.icon("fa.question-circle", color="#2196F3")
+        )  # Set blue color
+        self.more_info_btn.setStyleSheet(
+            """
                     QPushButton {
                         background-color: transparent;
                         border: none;
@@ -163,7 +178,8 @@ class QuantumAnalysisTab(QWidget):
                         background-color: rgba(33, 150, 243, 0.1);
                         border-radius: 16px;
                     }
-                """)
+                """
+        )
         self.more_info_btn.setToolTip("More information about the plots")
         self.more_info_btn.clicked.connect(self.show_plot_info)
 
@@ -184,7 +200,8 @@ class QuantumAnalysisTab(QWidget):
         # Results text area
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
-        self.results_text.setStyleSheet("""
+        self.results_text.setStyleSheet(
+            """
             QTextEdit {
                 background-color: #ffffff;
                 border: 1px solid #cccccc;
@@ -193,7 +210,8 @@ class QuantumAnalysisTab(QWidget):
                 font-size: 12px;
                 color: #000000;
             }
-        """)
+        """
+        )
         self.results_text.setMaximumHeight(100)
         main_layout.addWidget(self.results_text)
 
@@ -212,7 +230,7 @@ class QuantumAnalysisTab(QWidget):
                 parent=self,  # Make sure parent is set
                 caption="Open Audio File",
                 directory="",
-                filter="Audio Files (*.wav *.mp3 *.m4a);;All Files (*)"
+                filter="Audio Files (*.wav *.mp3 *.m4a);;All Files (*)",
             )
 
             if file_name:
@@ -225,16 +243,18 @@ class QuantumAnalysisTab(QWidget):
                 QApplication.processEvents()  # Allow UI to update
 
                 # Load audio
-                self.audio_data, self.sample_rate = librosa.load(file_name, sr=22050, mono=True, duration=30)
+                self.audio_data, self.sample_rate = librosa.load(
+                    file_name, sr=22050, mono=True, duration=30
+                )
 
                 # Plot audio waveform
                 self.figure.clear()
                 ax = self.figure.add_subplot(111)
                 times = np.arange(len(self.audio_data)) / self.sample_rate
                 ax.plot(times, self.audio_data)
-                ax.set_xlabel('Time (s)')
-                ax.set_ylabel('Amplitude')
-                ax.set_title('Audio Waveform')
+                ax.set_xlabel("Time (s)")
+                ax.set_ylabel("Amplitude")
+                ax.set_title("Audio Waveform")
                 self.canvas.draw()
 
                 # Re-enable buttons
@@ -249,18 +269,18 @@ class QuantumAnalysisTab(QWidget):
             print(f"Error in audio import: {str(e)}")
             self.results_text.append(f"Error loading audio: {str(e)}")
             # Make sure buttons are re-enabled even if there's an error
-            if hasattr(self, 'import_btn'):
+            if hasattr(self, "import_btn"):
                 self.import_btn.setEnabled(True)
-            if hasattr(self, 'analyze_btn'):
+            if hasattr(self, "analyze_btn"):
                 self.analyze_btn.setEnabled(True)
-            if hasattr(self, 'export_data_btn'):
+            if hasattr(self, "export_data_btn"):
                 self.export_data_btn.setEnabled(True)
-            if hasattr(self, 'export_plot_btn'):
+            if hasattr(self, "export_plot_btn"):
                 self.export_plot_btn.setEnabled(True)
 
     def run_analysis(self):
         try:
-            if not hasattr(self, 'audio_data') or self.audio_data is None:
+            if not hasattr(self, "audio_data") or self.audio_data is None:
                 self.results_text.append("Please import audio file first.")
                 return
 
@@ -282,26 +302,31 @@ class QuantumAnalysisTab(QWidget):
                 frequencies=dominant_frequencies,
                 amplitudes=dominant_amplitudes,
                 internal_noise=internal_noise,
-                external_noise=external_noise
+                external_noise=external_noise,
             )
 
             # Store in data manager
             quantum_results = {
-                'frequencies': dominant_frequencies.tolist(),
-                'amplitudes': dominant_amplitudes.tolist(),
-                'noise_levels': {'internal': internal_noise, 'external': external_noise},
-                'analysis_results': results,
-                'sample_rate': self.sample_rate,
-                'statevector': results.get('statevector', []),  # Add statevector
-                'purity': results.get('purity', 0),
-                'fidelity': results.get('fidelity', 0)
+                "frequencies": dominant_frequencies.tolist(),
+                "amplitudes": dominant_amplitudes.tolist(),
+                "noise_levels": {
+                    "internal": internal_noise,
+                    "external": external_noise,
+                },
+                "analysis_results": results,
+                "sample_rate": self.sample_rate,
+                "statevector": results.get("statevector", []),  # Add statevector
+                "purity": results.get("purity", 0),
+                "fidelity": results.get("fidelity", 0),
             }
             self.data_manager.update_quantum_results(quantum_results)
 
             self.last_results = results
             self.visualizer.plot_quantum_state(results)
             self.canvas.draw()
-            self._update_results_text(results, dominant_frequencies, dominant_amplitudes)
+            self._update_results_text(
+                results, dominant_frequencies, dominant_amplitudes
+            )
 
         except Exception as e:
             print(f"Analysis error: {str(e)}")
@@ -317,10 +342,11 @@ class QuantumAnalysisTab(QWidget):
             self.results_text.append(f"• Frequency: {freq:.1f} Hz")
             self.results_text.append(f"• Relative Amplitude: {amp:.3f}")
 
-            if 'musical_mappings' in results:
-                for system, mapping in results['musical_mappings'].items():
+            if "musical_mappings" in results:
+                for system, mapping in results["musical_mappings"].items():
                     self.results_text.append(
-                        f"• {system}: {mapping['note']} (deviation: {mapping['deviation']:.2f} Hz)")
+                        f"• {system}: {mapping['note']} (deviation: {mapping['deviation']:.2f} Hz)"
+                    )
 
         self._append_quantum_analysis_results(results)
 
@@ -346,9 +372,11 @@ class QuantumAnalysisTab(QWidget):
 
         # Normalize and encode audio data into quantum state
         normalized_signal = audio_signal / np.max(np.abs(audio_signal))
-        for i, amplitude in enumerate(normalized_signal[:2 ** num_qubits]):
-            angle = np.arccos(amplitude) if amplitude >= 0 else -np.arccos(abs(amplitude))
-            if i < 2 ** num_qubits:
+        for i, amplitude in enumerate(normalized_signal[: 2**num_qubits]):
+            angle = (
+                np.arccos(amplitude) if amplitude >= 0 else -np.arccos(abs(amplitude))
+            )
+            if i < 2**num_qubits:
                 circuit.ry(angle, qr[i % num_qubits])
 
         # Apply QFT
@@ -368,7 +396,7 @@ class QuantumAnalysisTab(QWidget):
 
         for state, count in counts.items():
             freq_index = int(state, 2)
-            frequency = freq_index * (sample_rate / (2 ** num_qubits))
+            frequency = freq_index * (sample_rate / (2**num_qubits))
             amplitude = count / 1024  # Normalize by number of shots
             frequencies.append(frequency)
             amplitudes.append(amplitude)
@@ -384,7 +412,7 @@ class QuantumAnalysisTab(QWidget):
             "1. Quantum Circuit: Shows the quantum operations and gates used in the analysis.\n"
             "2. Quantum Surface: Displays the surface with or without Pythagorean results.\n"
             "3. State Probabilities: Illustrates the probability distribution of states.\n"
-            "4. Quantum Quality Metrics: Shows state purity and fidelity measurements."
+            "4. Quantum Quality Metrics: Shows state purity and fidelity measurements.",
         )
 
     def update_internal_noise(self, value):
@@ -397,22 +425,19 @@ class QuantumAnalysisTab(QWidget):
 
     def export_data(self):
         """Export analysis results"""
-        if not hasattr(self, 'last_results'):
+        if not hasattr(self, "last_results"):
             self.results_text.append("\nNo data to export. Run analysis first.")
             return
 
         file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Data",
-            "",
-            "JSON Files (*.json);;CSV Files (*.csv)"
+            self, "Export Data", "", "JSON Files (*.json);;CSV Files (*.csv)"
         )
 
         if file_name:
             try:
-                if file_name.endswith('.json'):
+                if file_name.endswith(".json"):
                     self._export_json(file_name)
-                elif file_name.endswith('.csv'):
+                elif file_name.endswith(".csv"):
                     self._export_csv(file_name)
                 self.results_text.append(f"\nData exported to {file_name}")
             except Exception as e:
@@ -424,20 +449,20 @@ class QuantumAnalysisTab(QWidget):
         import json
 
         export_data = {
-            'timestamp': datetime.now().isoformat(),
-            'noise_levels': {
-                'internal': self.internal_noise_slider.value() / 100.0,
-                'external': self.external_noise_slider.value() / 100.0
+            "timestamp": datetime.now().isoformat(),
+            "noise_levels": {
+                "internal": self.internal_noise_slider.value() / 100.0,
+                "external": self.external_noise_slider.value() / 100.0,
             },
-            'measurements': dict(self.last_results['counts']),
-            'metrics': {
-                'purity': float(self.last_results['purity']),
-                'fidelity': float(self.last_results['fidelity'])
+            "measurements": dict(self.last_results["counts"]),
+            "metrics": {
+                "purity": float(self.last_results["purity"]),
+                "fidelity": float(self.last_results["fidelity"]),
             },
-            'materials_analysis': self.last_results['materials_analysis']
+            "materials_analysis": self.last_results["materials_analysis"],
         }
 
-        with open(filename, 'w') as f:
+        with open(filename, "w") as f:
             json.dump(export_data, f, indent=2)
 
     def _export_csv(self, filename):
@@ -445,59 +470,72 @@ class QuantumAnalysisTab(QWidget):
         from datetime import datetime
         import csv
 
-        with open(filename, 'w', newline='') as f:
+        with open(filename, "w", newline="") as f:
             writer = csv.writer(f)
 
             # Write metadata
-            writer.writerow(['Analysis Timestamp', datetime.now().isoformat()])
-            writer.writerow([''])
+            writer.writerow(["Analysis Timestamp", datetime.now().isoformat()])
+            writer.writerow([""])
 
             # Write noise levels
-            writer.writerow(['Noise Levels'])
-            writer.writerow(['Internal Noise', self.internal_noise_slider.value() / 100.0])
-            writer.writerow(['External Noise', self.external_noise_slider.value() / 100.0])
-            writer.writerow([''])
+            writer.writerow(["Noise Levels"])
+            writer.writerow(
+                ["Internal Noise", self.internal_noise_slider.value() / 100.0]
+            )
+            writer.writerow(
+                ["External Noise", self.external_noise_slider.value() / 100.0]
+            )
+            writer.writerow([""])
 
             # Write measurements
-            writer.writerow(['State', 'Count'])
-            for state, count in self.last_results['counts'].items():
+            writer.writerow(["State", "Count"])
+            for state, count in self.last_results["counts"].items():
                 writer.writerow([state, count])
-            writer.writerow([''])
+            writer.writerow([""])
 
             # Write metrics
-            writer.writerow(['Metrics'])
-            writer.writerow(['Purity', float(self.last_results['purity'])])
-            writer.writerow(['Fidelity', float(self.last_results['fidelity'])])
-            writer.writerow([''])
+            writer.writerow(["Metrics"])
+            writer.writerow(["Purity", float(self.last_results["purity"])])
+            writer.writerow(["Fidelity", float(self.last_results["fidelity"])])
+            writer.writerow([""])
 
             # Write materials analysis
-            writer.writerow(['Recommended Materials'])
-            writer.writerow(['Material', 'Score', 'Coherence Time', 'Coupling Strength', 'Quantum Efficiency'])
-            for material in self.last_results['materials_analysis'][:3]:  # Top 3 materials
-                writer.writerow([
-                    material['material'],
-                    material['score'],
-                    material['coherence_time'],
-                    material['coupling_strength'],
-                    material['quantum_efficiency']
-                ])
+            writer.writerow(["Recommended Materials"])
+            writer.writerow(
+                [
+                    "Material",
+                    "Score",
+                    "Coherence Time",
+                    "Coupling Strength",
+                    "Quantum Efficiency",
+                ]
+            )
+            for material in self.last_results["materials_analysis"][
+                :3
+            ]:  # Top 3 materials
+                writer.writerow(
+                    [
+                        material["material"],
+                        material["score"],
+                        material["coherence_time"],
+                        material["coupling_strength"],
+                        material["quantum_efficiency"],
+                    ]
+                )
 
     def export_plot(self):
         """Export current visualization as image"""
-        if not hasattr(self, 'last_results'):
+        if not hasattr(self, "last_results"):
             self.results_text.append("\nNo plot to export. Run analysis first.")
             return
 
         file_name, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Plot",
-            "",
-            "PNG Files (*.png);;PDF Files (*.pdf)"
+            self, "Export Plot", "", "PNG Files (*.png);;PDF Files (*.pdf)"
         )
 
         if file_name:
             try:
-                self.figure.savefig(file_name, dpi=300, bbox_inches='tight')
+                self.figure.savefig(file_name, dpi=300, bbox_inches="tight")
                 self.results_text.append(f"\nPlot saved to {file_name}")
             except Exception as e:
                 self.results_text.append(f"\nError saving plot: {str(e)}")
@@ -510,19 +548,21 @@ class QuantumAnalysisTab(QWidget):
         self.results_text.append("\n=== Quantum Analysis ===")
 
         # Add quantum state metrics if available
-        if 'purity' in results:
+        if "purity" in results:
             self.results_text.append(f"\nState Purity: {results['purity']:.3f}")
-        if 'fidelity' in results:
+        if "fidelity" in results:
             self.results_text.append(f"State Fidelity: {results['fidelity']:.3f}")
 
         # Add decoherence info if available
-        if 'decoherence' in results:
-            self.results_text.append(f"Decoherence Time: {results['decoherence']:.2e} s")
+        if "decoherence" in results:
+            self.results_text.append(
+                f"Decoherence Time: {results['decoherence']:.2e} s"
+            )
 
         # Add any other quantum-specific results
-        if 'statevector' in results:
+        if "statevector" in results:
             self.results_text.append("\nQuantum State Vector:")
-            statevector = results['statevector']
+            statevector = results["statevector"]
             if isinstance(statevector, (list, np.ndarray)):
                 for i, amp in enumerate(statevector[:5]):  # Show first 5 amplitudes
                     self.results_text.append(f"State |{i}⟩: {amp:.3f}")
@@ -530,3 +570,33 @@ class QuantumAnalysisTab(QWidget):
                     self.results_text.append("...")
 
         # Add any other quantum metrics you want to display
+
+    def get_current_results(self):
+        """Return the latest analysis results"""
+        if hasattr(self, "last_results") and self.last_results is not None:
+            # Return in standardized format
+            return {
+                "frequencies": self.last_results.get("frequencies", []),
+                "amplitudes": self.last_results.get("amplitudes", []),
+                "statevector": self.last_results.get("statevector", []),
+                "purity": self.last_results.get("purity", 0),
+                "fidelity": self.last_results.get("fidelity", 0),
+                "analysis_results": self.last_results,  # Full results if needed
+                "quantum_metrics": {
+                    "purity": self.last_results.get("purity", 0),
+                    "fidelity": self.last_results.get("fidelity", 0),
+                },
+            }
+        # Default return if last_results is not available
+        return {
+            "frequencies": [],
+            "amplitudes": [],
+            "statevector": [],
+            "purity": 0,
+            "fidelity": 0,
+            "analysis_results": {},
+            "quantum_metrics": {
+                "purity": 0,
+                "fidelity": 0,
+            },
+        }

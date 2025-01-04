@@ -199,14 +199,14 @@ class MelodyAnalysisTab(QWidget):
             wave_solution = odeint(self.navier_stokes_sound, y0, t, args=(L,))
 
             # Format results
-            melody_results = {
-                "musical_systems": musical_systems,
-                "notes": input_notes,
-                "frequencies": all_frequencies,
-                "eigenvalues": eigenvalues.tolist(),
-                "wave_solution": wave_solution.tolist(),
-                "t": t.tolist(),
-            }
+            melody_results = dict(
+                musical_systems=musical_systems,
+                notes=input_notes,
+                frequencies=all_frequencies,
+                eigenvalues=eigenvalues.tolist(),
+                wave_solution=wave_solution.tolist(),
+                t=t.tolist(),
+            )
 
             print("\nMelody Results Structure:")
             for key, value in melody_results.items():

@@ -1,20 +1,21 @@
 # main.py
 import sys
 
+# Imports
 import librosa
 import numpy as np
 from PyQt6.QtWidgets import QApplication, QFileDialog
 from matplotlib.backends.backend_template import FigureCanvas
 from matplotlib.figure import Figure
 
+# storage
 from storage.data_manager import QuantumDataManager
-from ui.features.quantum_ui.tab_ui.fluid_dynamics_tab import FluidAnalysisTab
 
 # Main UI imports
 from ui.launch_screen import LaunchScreen
 from ui.feature_screen import FeatureScreen
 
-# Quantum Harmonic Analysis
+# Quantum Harmonic Tabs
 from ui.features.quantum_ui.tab_ui.quantum_analysis_tab import QuantumAnalysisTab
 from ui.features.quantum_ui.tab_ui.qec_analysis_tab import QECAnalysisTab
 from ui.features.quantum_ui.tab_ui.note_tab import MusicTable
@@ -22,6 +23,7 @@ from ui.features.quantum_ui.tab_ui.melody_analysis_tab import MelodyAnalysisTab
 from ui.features.quantum_ui.tab_ui.particle_simulation_tab import ParticleSimulationTab
 from ui.features.quantum_ui.tab_ui.circuit_tab import QuantumMelodyAnalysisTab
 from ui.features.ai_ui.ai_analysis_screen import AIAnalysisScreen
+from ui.features.quantum_ui.tab_ui.fluid_dynamics_tab import FluidAnalysisTab
 
 from dotenv import load_dotenv
 
@@ -111,7 +113,7 @@ class MainApplication:
 
         if ai_analysis_screen:
             ai_analysis_screen.analysis_complete.connect(
-                lambda results: data_manager.update_all_results(results)
+                lambda results: data_manager.get_all_results()
             )
             print("Connected AI Analysis to Data Manager")
 

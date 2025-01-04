@@ -52,7 +52,6 @@ class QuantumMelodyAnalysisTab(QWidget):
         # UI Components
         self.note_input = None
         self.results_text = None
-        self.export_sim_btn = None
 
         self.setup_ui()
 
@@ -107,10 +106,10 @@ class QuantumMelodyAnalysisTab(QWidget):
         button_layout.addWidget(analyze_btn)
 
         # Export to simulator buttons
-        self.export_sim_btn = create_button("Export to Simulation")
-        self.export_sim_btn.clicked.connect(self.export_to_simulation)
-        self.export_sim_btn.setEnabled(False)  # Disabled until analysis is complete
-        button_layout.addWidget(self.export_sim_btn)
+        export_sim_btn = create_button("Export to Simulation")
+        export_sim_btn.clicked.connect(self.export_to_simulation)
+        # Disabled until analysis is complete
+        button_layout.addWidget(export_sim_btn)
 
         input_layout.addLayout(button_layout)
         input_group.setLayout(input_layout)
@@ -208,7 +207,7 @@ class QuantumMelodyAnalysisTab(QWidget):
         finally:
             print("Analysis completed")
 
-    def update_visualizations(self, results):
+    def update_visualizations(self, results, circuit):
         """Update the visualization with circuit and simulation results"""
         # Get circuit from results
         circuit = results["circuit"]
