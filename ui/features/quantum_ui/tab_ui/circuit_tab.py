@@ -1,8 +1,10 @@
+import numpy as np
 from qiskit import qasm3
 
 from core.calculations.quantum.quantum_circuit_builder import create_circuit
 from core.calculations.quantum.quantum_harmonic_analysis import QuantumHarmonicsAnalyzer
 from core.calculations.quantum.quantum_state_display import QuantumStateVisualizer
+from data.elements import atomic_frequencies
 from data.frequencies import frequency_systems
 from PyQt6.QtWidgets import (
     QWidget,
@@ -12,10 +14,16 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QTextEdit,
     QComboBox,
+    QPushButton,
+    QDialog,
+    QScrollArea,
 )
-from PyQt6.QtCore import pyqtSignal
+import qtawesome as qta
+from PyQt6.QtCore import pyqtSignal, Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from matplotlib.path import Path
+from matplotlib.patches import PathPatch
 
 from storage.data_manager import QuantumDataManager
 from ui.styles_ui.styles import (
@@ -25,6 +33,7 @@ from ui.styles_ui.styles import (
     base_style,
     create_button,
     textedit_style,
+    lineedit_style,
 )
 
 
@@ -33,6 +42,9 @@ class QuantumMelodyAnalysisTab(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.canvas = None
+        self.historical_runs = []
+        self.more_info_btn = None
         self.sample_rate = None
         self.audio_data = None
         self.frequency_systems = frequency_systems
@@ -62,89 +74,132 @@ class QuantumMelodyAnalysisTab(QWidget):
 
         # Input controls group
         input_group = create_group_box("Melody Input")
-        input_layout = QVBoxLayout()
+        input_layout = QHBoxLayout()  # Changed to horizontal layout
 
-        # # Note input
-        # note_layout = QHBoxLayout()
-        # note_label = QLabel("Enter notes (comma-separated, e.g. C4,E4,G4):")
-        # note_label.setStyleSheet(base_style)
-        # self.note_input = QLineEdit()
-        # self.note_input.setStyleSheet(lineedit_style)
-        # note_layout.addWidget(note_label)
-        # note_layout.addWidget(self.note_input)
-        # input_layout.addLayout(note_layout)
+        # Info button
+        self.more_info_btn = QPushButton()
+        self.more_info_btn.setIcon(qta.icon("fa.question-circle", color="#2196F3"))
+        self.more_info_btn.setStyleSheet(
+            """
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                min-width: 32px;
+                max-width: 32px;
+                min-height: 32px;
+                max-height: 32px;
+            }
+            QPushButton:hover {
+                background-color: rgba(33, 150, 243, 0.1);
+                border-radius: 16px;
+            }
+        """
+        )
+        self.more_info_btn.setToolTip("More information about the analysis")
+        self.more_info_btn.clicked.connect(self.show_plot_info)
+        input_layout.addWidget(self.more_info_btn)
 
-        # Note input with combo box
-        note_layout = QHBoxLayout()
-
-        # Label for notes
-        note_label = QLabel("Enter notes:")
+        # Note input
+        note_label = QLabel("Enter Notes:")
         note_label.setStyleSheet(base_style)
-        note_layout.addWidget(note_label)
+        input_layout.addWidget(note_label)
 
-        # Combo box for note systems
+        self.note_input = QLineEdit()
+        self.note_input.setStyleSheet(lineedit_style)
+        input_layout.addWidget(self.note_input)
+
+        # System selector
+        system_label = QLabel("Type:")
+        system_label.setStyleSheet(base_style)
+        input_layout.addWidget(system_label)
+
         self.system_combo = QComboBox()
         self.system_combo.addItems(
             ["Western 12-Tone", "Indian Classical", "Arabic", "Gamelan", "Pythagorean"]
         )
-        note_layout.addWidget(self.system_combo)
+        input_layout.addWidget(self.system_combo)
 
-        # Line edit for notes (with black text)
-        self.note_input = QLineEdit()
-        self.note_input.setStyleSheet(
-            "color: black; background-color: white; border: 1px solid gray;"
-        )  # Black text
-        note_layout.addWidget(self.note_input)
-
-        # Add the layout to the parent input layout
-        input_layout.addLayout(note_layout)
-
-        # Analysis and Export buttons
-        button_layout = QHBoxLayout()
+        # Analysis button
         analyze_btn = create_button("Run Quantum Analysis")
         analyze_btn.clicked.connect(self.run_analysis)
-        button_layout.addWidget(analyze_btn)
+        input_layout.addWidget(analyze_btn)
 
-        # Export to simulator buttons
+        # Export button
         export_sim_btn = create_button("Export to Simulation")
         export_sim_btn.clicked.connect(self.export_to_simulation)
-        # Disabled until analysis is complete
-        button_layout.addWidget(export_sim_btn)
+        input_layout.addWidget(export_sim_btn)
 
-        input_layout.addLayout(button_layout)
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
 
-        # Create visualization layout
-        vis_layout = QHBoxLayout()
+        # Create main content area with visualizations and results
+        content_container = QWidget()
+        content_layout = QHBoxLayout(content_container)
 
-        # Main analysis visualization
-        main_vis_group = create_group_box("Quantum Analysis")
+        # In the setup_ui method, update the visualization section:
+
+        # Left side: Visualizations
+        viz_container = QWidget()
+        viz_layout = QVBoxLayout(viz_container)
+        viz_layout.setSpacing(20)  # Space between visualizations
+
+        # Main quantum circuit visualization
+        main_vis_group = create_group_box("Quantum Circuit Analysis")
         main_vis_layout = QVBoxLayout()
+        self.main_canvas.setMinimumHeight(250)
+        self.main_canvas.setMaximumHeight(300)
         main_vis_layout.addWidget(self.main_canvas)
         main_vis_group.setLayout(main_vis_layout)
-        vis_layout.addWidget(main_vis_group)
+        viz_layout.addWidget(main_vis_group)
 
-        # Quantum state visualization
-        state_vis_group = create_group_box("Quantum State")
-        state_vis_layout = QVBoxLayout()
-        state_vis_layout.addWidget(self.state_canvas)
-        state_vis_group.setLayout(state_vis_layout)
-        vis_layout.addWidget(state_vis_group)
+        # Note relationships with atomic data
+        resonance_vis_group = create_group_box("Note Relationships")
+        resonance_vis_layout = QVBoxLayout()
+        self.state_canvas.setMinimumHeight(250)
+        self.state_canvas.setMaximumHeight(300)
+        resonance_vis_layout.addWidget(self.state_canvas)
+        resonance_vis_group.setLayout(resonance_vis_layout)
+        viz_layout.addWidget(resonance_vis_group)
 
-        layout.addLayout(vis_layout)
+        # Set stretch factors for visualizations
+        viz_layout.setStretch(0, 1)  # Equal space for both
+        viz_layout.setStretch(1, 1)
 
-        # Results text area
-        results_group = create_group_box("Analysis Results")
-        results_layout = QVBoxLayout()
+        content_layout.addWidget(
+            viz_container, stretch=2
+        )  # Visualization gets 2/3 of space
+
+        # Right side: Results
+        results_container = QWidget()
+        results_layout = QVBoxLayout(results_container)
+
+        results_label = QLabel("Analysis Results")
+        results_label.setStyleSheet("color: white; font-weight: bold;")
+        results_layout.addWidget(results_label)
+
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
-        self.results_text.setStyleSheet(textedit_style)
+        self.results_text.setStyleSheet(
+            textedit_style
+            + """
+            min-width: 300px;
+            max-width: 400px;
+        """
+        )
         results_layout.addWidget(self.results_text)
-        results_group.setLayout(results_layout)
-        layout.addWidget(results_group)
+
+        content_layout.addWidget(results_container, stretch=1)
+
+        # Add the content container to main layout
+        layout.addWidget(content_container)
 
         self.setLayout(layout)
+
+        # Connect the system combo box to update note placeholder
+        self.system_combo.currentTextChanged.connect(self.update_note_placeholder)
+
+        # Initial update of note placeholder
+        self.update_note_placeholder(self.system_combo.currentText())
 
     def run_analysis(self):
         try:
@@ -208,49 +263,219 @@ class QuantumMelodyAnalysisTab(QWidget):
             print("Analysis completed")
 
     def update_visualizations(self, results, circuit):
-        """Update the visualization with circuit and simulation results"""
-        # Get circuit from results
-        circuit = results["circuit"]
-
-        # Clear previous visualization
+        """Update visualizations with proper data extraction"""
+        # Clear figures
         self.main_figure.clear()
+        self.state_figure.clear()
 
-        # Set up grid layout
-        gs = self.main_figure.add_gridspec(2, 1, height_ratios=[2, 1], hspace=0.3)
-
-        # Circuit diagram (top subplot)
-        ax_circuit = self.main_figure.add_subplot(gs[0])
+        # Draw circuit
+        ax_circuit = self.main_figure.add_subplot(111)
+        self.main_figure.subplots_adjust(left=0.15, right=0.85, top=0.95, bottom=0.2)
         circuit.draw(
             output="mpl",
-            style={"backgroundcolor": "white"},
+            style={
+                "backgroundcolor": "#f8f9fa",
+                "fontsize": 10,
+                "compress": True,
+                "scale": 0.55,
+            },
             initial_state=True,
             plot_barriers=True,
-            justify="left",
+            justify="center",
             ax=ax_circuit,
         )
-        ax_circuit.set_title("Quantum Circuit")
-
-        # State probabilities (bottom subplot)
-        ax_state = self.main_figure.add_subplot(gs[1])
-        counts = results["counts"]
-        # Convert counts to probabilities
-        total_shots = sum(counts.values())
-        probs = {state: count / total_shots for state, count in counts.items()}
-
-        # Plot state probabilities
-        states = list(probs.keys())
-        probabilities = list(probs.values())
-        ax_state.bar(range(len(states)), probabilities)
-        ax_state.set_xticks(range(len(states)))
-        ax_state.set_xticklabels(states, rotation=45)
-        ax_state.set_title("State Probabilities")
-        ax_state.set_ylabel("Probability")
-
-        # Update canvas
         self.main_canvas.draw()
 
-        # Store analysis results
+        # Note relationships visualization
+        ax_rel = self.state_figure.add_subplot(111)
+        self.state_figure.set_size_inches(10, 5)
+
+        # Extract data from atomic_analysis
+        atomic_analysis = results.get("atomic_analysis", [])
+        if not atomic_analysis:
+            print("No atomic analysis found")
+            return
+
+        notes = []
+        frequencies = []
+        mappings = []
+
+        for analysis in atomic_analysis:
+            freq = analysis.get("frequency")
+            if freq:
+                frequencies.append(freq)
+                # Get note from western_12_tone mapping
+                note = (
+                    analysis.get("musical_mappings", {})
+                    .get("western_12_tone", {})
+                    .get("note", "")
+                )
+                notes.append(note)
+                mappings.append(analysis.get("atomic_matches", []))
+
+        print(f"Debug - Extracted notes: {notes}")
+        print(f"Debug - Extracted frequencies: {frequencies}")
+
+        if not notes or not frequencies:
+            print("No valid notes or frequencies found")
+            return
+
+        # Calculate positions
+        radius = 1.0
+        angles = np.linspace(0, 2 * np.pi, len(notes), endpoint=False)
+        angles = angles + np.pi / 2  # Rotate to start from top
+        x = radius * np.cos(angles)
+        y = radius * np.sin(angles)
+
+        # Draw connections
+        for i in range(len(notes)):
+            for j in range(i + 1, len(notes)):
+                ratio = min(frequencies[i], frequencies[j]) / max(
+                    frequencies[i], frequencies[j]
+                )
+
+                # Calculate curve points
+                mid_x = (x[i] + x[j]) / 2
+                mid_y = (y[i] + y[j]) / 2
+                ctrl_x = mid_x + (y[j] - y[i]) * 0.2
+                ctrl_y = mid_y - (x[j] - x[i]) * 0.2
+
+                vertices = np.array(
+                    [[x[i], y[i]], [ctrl_x, ctrl_y], [x[j], y[j]]], dtype=np.float64
+                )
+
+                path = Path(vertices, [Path.MOVETO, Path.CURVE3, Path.CURVE3])
+
+                # Draw connection line
+                patch = PathPatch(
+                    path,
+                    facecolor="none",
+                    edgecolor="#00FFFF",
+                    linewidth=2.5,
+                    alpha=0.8,
+                    zorder=2,
+                )
+                ax_rel.add_patch(patch)
+
+                # Add ratio label
+                ax_rel.annotate(
+                    f"{ratio:.3f}",
+                    (ctrl_x, ctrl_y),
+                    xytext=(0, 5),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.7, pad=1),
+                    fontsize=8,
+                    zorder=3,
+                )
+
+            # Draw nodes and labels with atomic information
+        for i, (note, freq, atomic_matches) in enumerate(
+            zip(notes, frequencies, mappings)
+        ):
+            # Map frequency to elements
+            element_matches = self.map_frequency_to_elements(freq)
+            if element_matches:
+                # Element text box with note included
+                elements = [match["element"] for match in element_matches]
+                transitions = [match["transition"] for match in element_matches]
+
+                # Include note in the element box
+                element_text = (
+                    f"Note: {note}\nElements: {', '.join(elements)}\n{transitions[0]}"
+                )
+
+                # Position element info
+                text_angle = angles[i]
+                text_radius = radius * 1.3
+                text_x = text_radius * np.cos(text_angle)
+                text_y = text_radius * np.sin(text_angle)
+
+                # Create more compact box
+                box = ax_rel.annotate(
+                    element_text,
+                    (text_x, text_y),
+                    ha="center",
+                    va="center",
+                    bbox=dict(
+                        facecolor="white",
+                        edgecolor="black",
+                        alpha=1.0,
+                        boxstyle="round,pad=0.5",
+                    ),
+                    fontsize=8,
+                    zorder=5,
+                )
+
+                # Draw frequency connection line from node to box
+                connector = PathPatch(
+                    Path([(x[i], y[i]), (text_x, text_y)]),
+                    facecolor="none",
+                    edgecolor="#3d405e",
+                    linestyle="--",
+                    alpha=0.3,
+                    zorder=1,
+                )
+                ax_rel.add_patch(connector)
+
+            # Draw node (smaller now since we have better labels)
+            ax_rel.scatter(
+                x[i],
+                y[i],
+                s=200,
+                color="white",
+                edgecolor="#3d405e",
+                linewidth=2,
+                zorder=4,
+            )
+
+            # Just frequency at node
+            ax_rel.annotate(
+                f"{freq:.1f} Hz",
+                (x[i], y[i]),
+                ha="center",
+                va="center",
+                fontsize=8,
+                zorder=5,
+            )
+
+            # Add hover event handling
+
+        # Rest of visualization code remains the same (aspect, limits, etc.)
+        ax_rel.set_aspect("equal")
+        ax_rel.axis("off")
+        ax_rel.set_xlim(-2, 2)
+        ax_rel.set_ylim(-2, 2)
+
+        self.state_figure.tight_layout(pad=1.5)
+        self.state_canvas.draw()
+
+        # Store results for history
         self.last_results = results
+
+    def map_frequency_to_elements(self, frequency):
+        """Map a frequency to possible atomic elements"""
+        matches = []
+        scaling_factor = 1 / 4.136  # Planck constant scaling
+        target_mass = frequency * scaling_factor
+
+        for element, atomic_mass in atomic_frequencies.items():
+            # Check harmonics 1-4
+            for harmonic in range(1, 5):
+                harmonic_mass = atomic_mass * harmonic
+                deviation = abs(harmonic_mass - target_mass) / harmonic_mass
+                if deviation < 0.05:  # 5% tolerance
+                    matches.append(
+                        {
+                            "element": element,
+                            "harmonic": harmonic,
+                            "deviation": deviation,
+                            "transition": f"{harmonic}→{harmonic + 1}",
+                        }
+                    )
+
+        return matches
 
     def display_results(self, results, musical_systems):
         """Display analysis results"""
@@ -327,6 +552,66 @@ class QuantumMelodyAnalysisTab(QWidget):
                     "frequencies": [system[note] for note in system_notes],
                 }
         return musical_systems
+
+    def show_plot_info(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Plot Information")
+        layout = QVBoxLayout(dialog)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content = QLabel()
+        content.setWordWrap(True)
+        content.setOpenExternalLinks(True)
+        content.setTextFormat(Qt.TextFormat.RichText)
+
+        info_text = """
+        <h3 style='text-align: center;'>Visualization Details</h3>
+        <ol>
+        <li><b>Velocity Components:</b> Evolution of velocity components over time.</li>
+        <li><b>Quantum Pressure Field:</b> Pressure evolution over time.</li>
+        <li><b>Velocity Magnitude:</b> Magnitude of velocity vs. tunneling probability (log scale).</li>
+        <li><b>Frequency Comparison:</b> Musical, atomic, quantum, and Fibonacci frequencies (log scale).</li>
+        <li><b>Terahertz Transitions:</b> 3D surface plot of Gaussian distribution for transition intensities.</li>
+        <li><b>Quantum-Classical Resonance:</b> Resonance strength across frequency range.</li>
+        </ol>
+        <p><b>Summary:</b> These visualizations bridge classical and quantum fluid dynamics, 
+        revealing connections between musical harmonies and quantum phenomena. They illustrate 
+        velocity evolution, pressure fields, energy spectra, quantum tunneling effects, 
+        resonance patterns, and terahertz transitions, offering insights into quantum-classical 
+        correspondences and applications in fluid dynamics and quantum computing.</p>
+        """
+
+        content.setText(info_text)
+        scroll.setWidget(content)
+
+        layout.addWidget(scroll)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+
+        dialog.setStyleSheet(
+            """
+            QDialog {
+                min-width: 400px;
+                max-width: 600px;
+            }
+            QLabel {
+                margin: 10px;
+            }
+            QPushButton {
+                min-width: 50px;
+                min-height: 50px;
+                padding: 5px 15px;
+                margin: 10px auto;
+            }
+        """
+        )
+
+        dialog.exec()
 
     def update_audio_data(self, audio_data, sample_rate):
         """Update the audio data and sample rate"""

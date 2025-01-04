@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QDialog,
     QScrollArea,
+    QGridLayout,
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -60,12 +61,11 @@ class QECAnalysisTab(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout = QVBoxLayout()  # Main layout for the widget/window
 
-        # QEC Controls group
-        qec_group = QGroupBox("QEC Controls")
-        qec_group.setStyleSheet(
+        # Input controls group box
+        input_group = QGroupBox("QEC Analysis Controls")
+        input_group.setStyleSheet(
             """
             QGroupBox {
                 color: white;
@@ -75,39 +75,43 @@ class QECAnalysisTab(QWidget):
                 padding: 15px;
                 background-color: rgba(61, 64, 94, 0.3);
             }
-            QLabel { color: white; }
         """
         )
-        qec_layout = QVBoxLayout()
-        qec_layout.setSpacing(5)
 
+        # Grid layout for controls
+        input_layout = QGridLayout()
+
+        # Create a More Info button with reference styling
         self.more_info_btn = QPushButton()
-        self.more_info_btn.setIcon(
-            qta.icon("fa.question-circle", color="#2196F3")
-        )  # Set blue color
+        self.more_info_btn.setIcon(qta.icon("fa.question-circle", color="#2196F3"))
         self.more_info_btn.setStyleSheet(
             """
-                            QPushButton {
-                                background-color: transparent;
-                                border: none;
-                                min-width: 32px;
-                                max-width: 32px;
-                                min-height: 32px;
-                                max-height: 32px;
-                            }
-                            QPushButton:hover {
-                                background-color: rgba(33, 150, 243, 0.1);
-                                border-radius: 16px;
-                            }
-                        """
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                min-width: 32px;
+                max-width: 32px;
+                min-height: 32px;
+                max-height: 32px;
+            }
+            QPushButton:hover {
+                background-color: rgba(33, 150, 243, 0.1);
+                border-radius: 16px;
+            }
+        """
         )
         self.more_info_btn.setToolTip("More information about the plots")
         self.more_info_btn.clicked.connect(self.show_plot_info)
-        qec_layout.addWidget(self.more_info_btn)
 
-        # Circuit type selector
-        type_layout = QHBoxLayout()
-        type_label = QLabel("Error Correction Code:")
+        # Material selection
+        material_label = QLabel("Material:")
+        material_label.setStyleSheet("color: white;")
+        self.material_selector = QComboBox()
+        self.material_selector.addItems(get_all_materials())
+
+        # QEC selection
+        qec_label = QLabel("Error Correction Code:")
+        qec_label.setStyleSheet("color: white;")
         self.qec_selector = QComboBox()
         self.qec_selector.addItems(
             [
@@ -118,124 +122,109 @@ class QECAnalysisTab(QWidget):
                 "9-Qubit Shor",
             ]
         )
-        type_layout.addWidget(type_label)
-        type_layout.addWidget(self.qec_selector)
-        qec_layout.addLayout(type_layout)
 
-        # T1/T2 Controls
-        params_group = QGroupBox("Decoherence Parameters")
-        params_group.setStyleSheet("color: white; border: 1px solid #3d405e;")
-        params_layout = QVBoxLayout()
-
-        # T1 control
-        t1_layout = QHBoxLayout()
+        # T1 control with reference styling
         t1_label = QLabel("T1:")
+        t1_label.setStyleSheet("color: white;")
         self.t1_slider = QSlider(Qt.Orientation.Horizontal)
-        self.t1_slider.setRange(1, 5000)  # Now 1-5000 ms instead of 1-100 μs
-        self.t1_slider.setValue(500)  # Default to 500 ms
-        self.t1_label = QLabel("500 ms")  # Updated to show ms
-        t1_layout.addWidget(t1_label)
-        t1_layout.addWidget(self.t1_slider)
-        t1_layout.addWidget(self.t1_label)
+        self.t1_slider.setRange(1, 5000)
+        self.t1_slider.setValue(500)
+        self.t1_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.t1_slider.setTickInterval(500)
+        self.t1_label = QLabel("500 ms")
+        self.t1_label.setStyleSheet("color: white;")
         self.t1_slider.valueChanged.connect(lambda v: self.t1_label.setText(f"{v} ms"))
-        params_layout.addLayout(t1_layout)
 
         # T2 control
-        t2_layout = QHBoxLayout()
         t2_label = QLabel("T2:")
+        t2_label.setStyleSheet("color: white;")
         self.t2_slider = QSlider(Qt.Orientation.Horizontal)
-        self.t2_slider.setRange(1, 2500)  # Now 1-2500 ms
-        self.t2_slider.setValue(250)  # Default to 250 ms
-        self.t2_label = QLabel("250 ms")  # Updated to show ms
-        t2_layout.addWidget(t2_label)
-        t2_layout.addWidget(self.t2_slider)
-        t2_layout.addWidget(self.t2_label)
+        self.t2_slider.setRange(1, 2500)
+        self.t2_slider.setValue(250)
+        self.t2_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.t2_slider.setTickInterval(250)
+        self.t2_label = QLabel("250 ms")
+        self.t2_label.setStyleSheet("color: white;")
         self.t2_slider.valueChanged.connect(lambda v: self.t2_label.setText(f"{v} ms"))
-        params_layout.addLayout(t2_layout)
-
-        params_group.setLayout(params_layout)
-        qec_layout.addWidget(params_group)
-        qec_group.setLayout(qec_layout)
-
-        # Material Controls group
-        material_group = QGroupBox("Material Controls")
-        material_group.setStyleSheet(
-            """
-            QGroupBox {
-                color: white;
-                font-size: 14px;
-                border: 1px solid #3d405e;
-                border-radius: 5px;
-                padding: 15px;
-                background-color: rgba(61, 64, 94, 0.3);
-            }
-            QLabel { color: white; }
-        """
-        )
-        material_layout = QVBoxLayout()
-
-        # Material selector
-        material_select_layout = QHBoxLayout()
-        material_label = QLabel("Material:")
-        self.material_selector = QComboBox()
-        self.material_selector.addItems(get_all_materials())
-        material_select_layout.addWidget(material_label)
-        material_select_layout.addWidget(self.material_selector)
-        material_layout.addLayout(material_select_layout)
 
         # Temperature control
-        temp_layout = QHBoxLayout()
-        temp_label = QLabel("Temperature (K):")
+        temp_label = QLabel("Temperature:")
+        temp_label.setStyleSheet("color: white;")
         self.temperature_slider = QSlider(Qt.Orientation.Horizontal)
         self.temperature_slider.setRange(4, 500)
         self.temperature_slider.setValue(300)
+        self.temperature_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.temperature_slider.setTickInterval(50)
         self.temp_label = QLabel("300 K")
+        self.temp_label.setStyleSheet("color: white;")
         self.temperature_slider.valueChanged.connect(
             lambda v: self.temp_label.setText(f"{v} K")
         )
-        temp_layout.addWidget(temp_label)
-        temp_layout.addWidget(self.temperature_slider)
-        temp_layout.addWidget(self.temp_label)
-        material_layout.addLayout(temp_layout)
 
-        material_group.setLayout(material_layout)
+        # Add widgets to grid layout
+        input_layout.addWidget(self.more_info_btn, 0, 0)
+        input_layout.addWidget(material_label, 0, 1)
+        input_layout.addWidget(self.material_selector, 0, 2)
+        input_layout.addWidget(qec_label, 0, 3)
+        input_layout.addWidget(self.qec_selector, 0, 4)
 
-        # Analysis button
-        self.analyze_btn = QPushButton("Run QEC Analysis")
-        self.analyze_btn.clicked.connect(self.run_analysis)
+        input_layout.addWidget(t1_label, 1, 0)
+        input_layout.addWidget(self.t1_slider, 1, 1, 1, 2)
+        input_layout.addWidget(self.t1_label, 1, 3)
+
+        input_layout.addWidget(t2_label, 2, 0)
+        input_layout.addWidget(self.t2_slider, 2, 1, 1, 2)
+        input_layout.addWidget(self.t2_label, 2, 3)
+
+        input_layout.addWidget(temp_label, 3, 0)
+        input_layout.addWidget(self.temperature_slider, 3, 1, 1, 2)
+        input_layout.addWidget(self.temp_label, 3, 3)
+
+        # Run button with reference styling
+        self.analyze_btn = QPushButton("Run Analysis")
         self.analyze_btn.setStyleSheet(
             """
             QPushButton {
-                background-color: #3d405e;
+                background-color: rgba(89, 92, 120, 0.6);
                 color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-size: 14px;
+                border: 1px solid #3d405e;
+                border-radius: 5px;
+                padding: 10px;
+                font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #1976D2;
+                background-color: rgba(25, 118, 210, 0.3);
+                border: 1px solid #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: rgba(13, 71, 161, 0.3);
             }
         """
         )
+        self.analyze_btn.clicked.connect(self.run_analysis)
+        input_layout.addWidget(
+            self.analyze_btn, 4, 0, 1, 5, Qt.AlignmentFlag.AlignCenter
+        )
 
-        # Add all components to main layout
-        layout.addWidget(qec_group)
-        layout.addWidget(material_group)
-        layout.addWidget(self.analyze_btn)
+        input_group.setLayout(input_layout)
+        layout.addWidget(input_group)
 
-        # Plot area
+        # Create visualization section
+        viz_container = QWidget()
+        viz_layout = QHBoxLayout(viz_container)
+
+        # Left side: Plots
         self.figure = Figure(figsize=(8, 6))
         self.canvas = FigureCanvas(self.figure)
-        layout.addWidget(self.canvas)
+        self.canvas.setMinimumHeight(400)
 
-        # Results text area
+        # Right side: Results text
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
         self.results_text.setStyleSheet(
             """
             QTextEdit {
-                background-color: #ffffff;
+                background-color: white;
                 border: 1px solid #cccccc;
                 padding: 8px;
                 font-family: monospace;
@@ -244,8 +233,15 @@ class QECAnalysisTab(QWidget):
             }
         """
         )
-        layout.addWidget(self.results_text)
 
+        # Add plot and results to visualization container
+        viz_layout.addWidget(self.canvas, stretch=2)
+        viz_layout.addWidget(self.results_text, stretch=1)
+
+        # Add visualization section to main layout
+        layout.addWidget(viz_container)
+
+        # Set the layout
         self.setLayout(layout)
 
     def run_analysis(self):

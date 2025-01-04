@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import eigh
 from scipy.integrate import odeint
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -10,7 +10,12 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QTextEdit,
     QGroupBox,
+    QHBoxLayout,
+    QComboBox,
+    QScrollArea,
+    QDialog,
 )
+import qtawesome as qta
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -24,6 +29,8 @@ class MelodyAnalysisTab(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.system_combo = None
+        self.more_info_btn = None
         self.data_manager = QuantumDataManager()
 
         # Physical constants
@@ -66,11 +73,37 @@ class MelodyAnalysisTab(QWidget):
         """
         )
 
-        input_layout = QVBoxLayout()
+        # Single row layout for all controls
+        input_layout = QHBoxLayout()
 
-        # Note input
-        input_label = QLabel("Enter notes (comma-separated, e.g. C4,E4,G4):")
+        # Info button
+        self.more_info_btn = QPushButton()
+        self.more_info_btn.setIcon(qta.icon("fa.question-circle", color="#2196F3"))
+        self.more_info_btn.setStyleSheet(
+            """
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                min-width: 32px;
+                max-width: 32px;
+                min-height: 32px;
+                max-height: 32px;
+            }
+            QPushButton:hover {
+                background-color: rgba(33, 150, 243, 0.1);
+                border-radius: 16px;
+            }
+        """
+        )
+        self.more_info_btn.setToolTip("More information about the plots")
+        self.more_info_btn.clicked.connect(self.show_plot_info)
+        input_layout.addWidget(self.more_info_btn)
+
+        # Note input label and field
+        input_label = QLabel("Enter Notes:")
         input_label.setStyleSheet("color: white;")
+        input_layout.addWidget(input_label)
+
         self.note_input = QLineEdit()
         self.note_input.setStyleSheet(
             """
@@ -81,35 +114,65 @@ class MelodyAnalysisTab(QWidget):
             }
         """
         )
+        input_layout.addWidget(self.note_input)
+
+        # System selector
+        system_label = QLabel("Type:")
+        system_label.setStyleSheet("color: white;")
+        input_layout.addWidget(system_label)
+
+        self.system_combo = QComboBox()
+        self.system_combo.addItems(
+            ["Western 12-Tone", "Indian Classical", "Arabic", "Gamelan", "Pythagorean"]
+        )
+        input_layout.addWidget(self.system_combo)
 
         # Analyze button
         self.analyze_button = QPushButton("Analyze Harmony")
         self.analyze_button.setStyleSheet(
             """
             QPushButton {
-                background-color: #3d405e;
+                background-color: rgba(89, 92, 120, 0.6);
                 color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
+                border: 1px solid #3d405e;
+                border-radius: 5px;
+                padding: 10px;
+                font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #1976D2;
+                background-color: rgba(25, 118, 210, 0.3);
+                border: 1px solid #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: rgba(13, 71, 161, 0.3);
             }
         """
         )
         self.analyze_button.clicked.connect(self.analyze_harmony)
-
-        input_layout.addWidget(input_label)
-        input_layout.addWidget(self.note_input)
         input_layout.addWidget(self.analyze_button)
+
+        # Set the input group layout
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
 
-        # Add visualization canvas
-        layout.addWidget(self.canvas)
+        # Create visualization container with horizontal layout
+        viz_container = QWidget()
+        viz_layout = QHBoxLayout(viz_container)
 
-        # Results text area
+        # Left side: Canvas container
+        canvas_container = QWidget()
+        canvas_layout = QVBoxLayout(canvas_container)
+        self.canvas.setMinimumHeight(400)
+        canvas_layout.addWidget(self.canvas)
+
+        # Right side: Results container
+        results_container = QWidget()
+        results_layout = QVBoxLayout(results_container)
+
+        results_label = QLabel("Analysis Results")
+        results_label.setStyleSheet("color: white; font-weight: bold;")
+        results_layout.addWidget(results_label)
+
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
         self.results_text.setStyleSheet(
@@ -120,10 +183,29 @@ class MelodyAnalysisTab(QWidget):
                 padding: 8px;
                 color: black;
                 font-family: Arial;
+                min-width: 300px;
+                max-width: 400px;
             }
         """
         )
-        layout.addWidget(self.results_text)
+        results_layout.addWidget(self.results_text)
+
+        # Add canvas and results to visualization container
+        viz_layout.addWidget(
+            canvas_container, stretch=2
+        )  # Canvas takes 2/3 of the width
+        viz_layout.addWidget(
+            results_container, stretch=1
+        )  # Results takes 1/3 of the width
+
+        # Add visualization section to main layout
+        layout.addWidget(viz_container)
+
+        # Connect the system combo box to update note placeholder
+        self.system_combo.currentTextChanged.connect(self.update_note_placeholder)
+
+        # Initial update of note placeholder
+        self.update_note_placeholder(self.system_combo.currentText())
 
     def create_hamiltonian(self, frequencies):
         """Create Hamiltonian matrix for the system"""
@@ -305,3 +387,81 @@ class MelodyAnalysisTab(QWidget):
                 self.results_text.append(
                     f"{notes[i]} resonates with: {', '.join(resonances)}"
                 )
+
+    def show_plot_info(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Plot Information")
+        layout = QVBoxLayout(dialog)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content = QLabel()
+        content.setWordWrap(True)
+        content.setOpenExternalLinks(True)
+        content.setTextFormat(Qt.TextFormat.RichText)
+
+        info_text = """
+        <h3 style='text-align: center;'>Visualization Details</h3>
+        <ol>
+        <li><b>Velocity Components:</b> Evolution of velocity components over time.</li>
+        <li><b>Quantum Pressure Field:</b> Pressure evolution over time.</li>
+        <li><b>Velocity Magnitude:</b> Magnitude of velocity vs. tunneling probability (log scale).</li>
+        <li><b>Frequency Comparison:</b> Musical, atomic, quantum, and Fibonacci frequencies (log scale).</li>
+        <li><b>Terahertz Transitions:</b> 3D surface plot of Gaussian distribution for transition intensities.</li>
+        <li><b>Quantum-Classical Resonance:</b> Resonance strength across frequency range.</li>
+        </ol>
+        <p><b>Summary:</b> These visualizations bridge classical and quantum fluid dynamics, 
+        revealing connections between musical harmonies and quantum phenomena. They illustrate 
+        velocity evolution, pressure fields, energy spectra, quantum tunneling effects, 
+        resonance patterns, and terahertz transitions, offering insights into quantum-classical 
+        correspondences and applications in fluid dynamics and quantum computing.</p>
+        """
+
+        content.setText(info_text)
+        scroll.setWidget(content)
+
+        layout.addWidget(scroll)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.accept)
+        layout.addWidget(close_button)
+
+        dialog.setStyleSheet(
+            """
+            QDialog {
+                min-width: 400px;
+                max-width: 600px;
+            }
+            QLabel {
+                margin: 10px;
+            }
+            QPushButton {
+                min-width: 50px;
+                min-height: 50px;
+                padding: 5px 15px;
+                margin: 10px auto;
+            }
+        """
+        )
+
+        dialog.exec()
+
+    def update_note_placeholder(self, system):
+        if system == "Western 12-Tone":
+            self.note_input.setPlaceholderText("e.g., C4,E4,G4")  # Correct
+        elif system == "Indian Classical":
+            self.note_input.setPlaceholderText(
+                "e.g., Sa,Re,Ga"
+            )  # Changed from Sa,Ma,Pa to match the green section
+        elif system == "Arabic":
+            self.note_input.setPlaceholderText(
+                "e.g., Duka,Sika,Jaharka"
+            )  # Changed to match the red section
+        elif system == "Gamelan":
+            self.note_input.setPlaceholderText(
+                "e.g., Slendro 1,2,3"
+            )  # Added "Slendro" to be more specific
+        elif system == "Pythagorean":
+            self.note_input.setPlaceholderText("e.g., C4,F4,G4")  # Correct
