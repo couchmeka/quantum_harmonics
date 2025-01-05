@@ -1,9 +1,10 @@
 import numpy as np
+import pandas as pd
 from qiskit import qasm3
-
+from core.calculations.melody.melody_atomic_mapping import AtomicResonanceAnalyzer
 from core.calculations.quantum.quantum_circuit_builder import create_circuit
+from core.calculations.melody.melody_arc_visualizer import create_arc_diagram
 from core.calculations.quantum.quantum_harmonic_analysis import QuantumHarmonicsAnalyzer
-from core.calculations.quantum.quantum_state_display import QuantumStateVisualizer
 from data.elements import atomic_frequencies
 from data.frequencies import frequency_systems
 from PyQt6.QtWidgets import (
@@ -22,8 +23,7 @@ import qtawesome as qta
 from PyQt6.QtCore import pyqtSignal, Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from matplotlib.path import Path
-from matplotlib.patches import PathPatch
+
 
 from storage.data_manager import QuantumDataManager
 from ui.styles_ui.styles import (
@@ -42,23 +42,25 @@ class QuantumMelodyAnalysisTab(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.canvas = None
+        self.arc_canvas = None
         self.historical_runs = []
         self.more_info_btn = None
         self.sample_rate = None
         self.audio_data = None
-        self.frequency_systems = frequency_systems
-        self.data_manager = QuantumDataManager()
         self.system_combo = None
+        self.frequency_systems = frequency_systems
         self.analyzer = QuantumHarmonicsAnalyzer()
+        self.atomic_analyzer = AtomicResonanceAnalyzer()
+        self.data_manager = QuantumDataManager()
 
         # Initialize visualization components
         self.main_figure = Figure(figsize=(12, 8))
         self.main_canvas = FigureCanvas(self.main_figure)
-        self.state_figure = Figure(figsize=(8, 6))
-        self.state_canvas = FigureCanvas(self.state_figure)
 
-        self.visualizer = QuantumStateVisualizer(self.state_figure)
+        # Initialize arc diagram components
+        self.arc_figure = Figure(figsize=(12, 6))  # Add this line
+        self.arc_canvas = FigureCanvas(self.arc_figure)  # And this line
+
         self.last_results = None
 
         # UI Components
@@ -152,14 +154,14 @@ class QuantumMelodyAnalysisTab(QWidget):
         main_vis_group.setLayout(main_vis_layout)
         viz_layout.addWidget(main_vis_group)
 
-        # Note relationships with atomic data
-        resonance_vis_group = create_group_box("Note Relationships")
-        resonance_vis_layout = QVBoxLayout()
-        self.state_canvas.setMinimumHeight(250)
-        self.state_canvas.setMaximumHeight(300)
-        resonance_vis_layout.addWidget(self.state_canvas)
-        resonance_vis_group.setLayout(resonance_vis_layout)
-        viz_layout.addWidget(resonance_vis_group)
+        # Arc diagram visualization
+        arc_vis_group = create_group_box("Atomic Resonance Network")
+        arc_vis_layout = QVBoxLayout()
+        self.arc_canvas.setMinimumHeight(300)  # Increased height
+        self.arc_canvas.setMaximumHeight(400)  # Increased max height
+        arc_vis_layout.addWidget(self.arc_canvas)
+        arc_vis_group.setLayout(arc_vis_layout)
+        viz_layout.addWidget(arc_vis_group)
 
         # Set stretch factors for visualizations
         viz_layout.setStretch(0, 1)  # Equal space for both
@@ -245,6 +247,12 @@ class QuantumMelodyAnalysisTab(QWidget):
                 "circuit_data": circuit_data,
                 "analysis_results": results,
                 "musical_systems": self._get_musical_systems(notes),
+                "phases": (
+                    np.angle(circuit_data["statevector"])
+                    if "statevector" in circuit_data
+                    else []
+                ),
+                "pythagorean_analysis": results.get("pythagorean_analysis", []),
             }
 
             self.data_manager.update_melody_results(melody_data)
@@ -263,12 +271,11 @@ class QuantumMelodyAnalysisTab(QWidget):
             print("Analysis completed")
 
     def update_visualizations(self, results, circuit):
-        """Update visualizations with proper data extraction"""
+        """Update visualizations with quantum circuit and arc diagram"""
         # Clear figures
         self.main_figure.clear()
-        self.state_figure.clear()
 
-        # Draw circuit
+        # Draw quantum circuit
         ax_circuit = self.main_figure.add_subplot(111)
         self.main_figure.subplots_adjust(left=0.15, right=0.85, top=0.95, bottom=0.2)
         circuit.draw(
@@ -286,32 +293,39 @@ class QuantumMelodyAnalysisTab(QWidget):
         )
         self.main_canvas.draw()
 
-        # Note relationships visualization
-        ax_rel = self.state_figure.add_subplot(111)
-        self.state_figure.set_size_inches(10, 5)
-
         # Extract data from atomic_analysis
         atomic_analysis = results.get("atomic_analysis", [])
         if not atomic_analysis:
             print("No atomic analysis found")
             return
 
+        # Extract notes and frequencies
         notes = []
         frequencies = []
-        mappings = []
 
         for analysis in atomic_analysis:
             freq = analysis.get("frequency")
             if freq:
                 frequencies.append(freq)
-                # Get note from western_12_tone mapping
-                note = (
-                    analysis.get("musical_mappings", {})
-                    .get("western_12_tone", {})
-                    .get("note", "")
-                )
+                # Get note from selected musical system
+                musical_mappings = analysis.get("musical_mappings", {})
+                # Try each system in order, use the first one that has a note
+                note = None
+                for system in [
+                    "western_12_tone",
+                    "indian_classical",
+                    "arabic",
+                    "gamelan",
+                    "pythagorean",
+                ]:
+                    system_data = musical_mappings.get(system, {})
+                    if isinstance(system_data, dict) and "note" in system_data:
+                        note = system_data["note"]
+                        break
+
+                if note is None:
+                    note = "Unknown"  # Fallback if no note is found in any system
                 notes.append(note)
-                mappings.append(analysis.get("atomic_matches", []))
 
         print(f"Debug - Extracted notes: {notes}")
         print(f"Debug - Extracted frequencies: {frequencies}")
@@ -320,140 +334,86 @@ class QuantumMelodyAnalysisTab(QWidget):
             print("No valid notes or frequencies found")
             return
 
-        # Calculate positions
-        radius = 1.0
-        angles = np.linspace(0, 2 * np.pi, len(notes), endpoint=False)
-        angles = angles + np.pi / 2  # Rotate to start from top
-        x = radius * np.cos(angles)
-        y = radius * np.sin(angles)
+        # Get atomic resonance data
+        atomic_results = self.atomic_analyzer.analyze_atomic_resonances(frequencies)
 
-        # Draw connections
+        # Create data for arc diagram
+        relationships_data = []
         for i in range(len(notes)):
             for j in range(i + 1, len(notes)):
                 ratio = min(frequencies[i], frequencies[j]) / max(
                     frequencies[i], frequencies[j]
                 )
 
-                # Calculate curve points
-                mid_x = (x[i] + x[j]) / 2
-                mid_y = (y[i] + y[j]) / 2
-                ctrl_x = mid_x + (y[j] - y[i]) * 0.2
-                ctrl_y = mid_y - (x[j] - x[i]) * 0.2
-
-                vertices = np.array(
-                    [[x[i], y[i]], [ctrl_x, ctrl_y], [x[j], y[j]]], dtype=np.float64
+                # Get element matches for both frequencies
+                elements_i = (
+                    atomic_results[i]["elements"] if i < len(atomic_results) else []
+                )
+                elements_j = (
+                    atomic_results[j]["elements"] if j < len(atomic_results) else []
                 )
 
-                path = Path(vertices, [Path.MOVETO, Path.CURVE3, Path.CURVE3])
+                # Find common elements
+                elements_i_set = set(match["element"] for match in elements_i)
+                elements_j_set = set(match["element"] for match in elements_j)
+                common_elements = elements_i_set.intersection(elements_j_set)
 
-                # Draw connection line
-                patch = PathPatch(
-                    path,
-                    facecolor="none",
-                    edgecolor="#00FFFF",
-                    linewidth=2.5,
-                    alpha=0.8,
-                    zorder=2,
+                # Get element information for source and target nodes
+                source_elements = [
+                    f"{e['element']}: {e['transition']}" for e in elements_i[:2]
+                ]
+                target_elements = [
+                    f"{e['element']}: {e['transition']}" for e in elements_j[:2]
+                ]
+
+                # Create node labels with element information
+                source_label = f"{notes[i]}\n{frequencies[i]:.1f} Hz\n" + "\n".join(
+                    source_elements
                 )
-                ax_rel.add_patch(patch)
-
-                # Add ratio label
-                ax_rel.annotate(
-                    f"{ratio:.3f}",
-                    (ctrl_x, ctrl_y),
-                    xytext=(0, 5),
-                    textcoords="offset points",
-                    ha="center",
-                    va="bottom",
-                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.7, pad=1),
-                    fontsize=8,
-                    zorder=3,
+                target_label = f"{notes[j]}\n{frequencies[j]:.1f} Hz\n" + "\n".join(
+                    target_elements
                 )
 
-            # Draw nodes and labels with atomic information
-        for i, (note, freq, atomic_matches) in enumerate(
-            zip(notes, frequencies, mappings)
-        ):
-            # Map frequency to elements
-            element_matches = self.map_frequency_to_elements(freq)
-            if element_matches:
-                # Element text box with note included
-                elements = [match["element"] for match in element_matches]
-                transitions = [match["transition"] for match in element_matches]
-
-                # Include note in the element box
-                element_text = (
-                    f"Note: {note}\nElements: {', '.join(elements)}\n{transitions[0]}"
+                relationships_data.append(
+                    {
+                        "source": source_label,  # Use the new source_label here
+                        "target": target_label,  # Use the new target_label here
+                        "weight": ratio,
+                        "common_elements": list(common_elements),
+                    }
                 )
 
-                # Position element info
-                text_angle = angles[i]
-                text_radius = radius * 1.3
-                text_x = text_radius * np.cos(text_angle)
-                text_y = text_radius * np.sin(text_angle)
+                df = pd.DataFrame(relationships_data)
 
-                # Create more compact box
-                box = ax_rel.annotate(
-                    element_text,
-                    (text_x, text_y),
-                    ha="center",
-                    va="center",
-                    bbox=dict(
-                        facecolor="white",
-                        edgecolor="black",
-                        alpha=1.0,
-                        boxstyle="round,pad=0.5",
-                    ),
-                    fontsize=8,
-                    zorder=5,
-                )
-
-                # Draw frequency connection line from node to box
-                connector = PathPatch(
-                    Path([(x[i], y[i]), (text_x, text_y)]),
-                    facecolor="none",
-                    edgecolor="#3d405e",
-                    linestyle="--",
-                    alpha=0.3,
-                    zorder=1,
-                )
-                ax_rel.add_patch(connector)
-
-            # Draw node (smaller now since we have better labels)
-            ax_rel.scatter(
-                x[i],
-                y[i],
-                s=200,
-                color="white",
-                edgecolor="#3d405e",
-                linewidth=2,
-                zorder=4,
+        # Get all unique nodes and their element information
+        node_info = {}
+        for i, note in enumerate(notes):
+            elements = atomic_results[i]["elements"] if i < len(atomic_results) else []
+            element_text = "\n".join(
+                [f"{e['element']}: {e['transition']}" for e in elements[:2]]
             )
+            node_info[f"{note}\n{frequencies[i]:.1f} Hz"] = element_text
 
-            # Just frequency at node
-            ax_rel.annotate(
-                f"{freq:.1f} Hz",
-                (x[i], y[i]),
-                ha="center",
-                va="center",
-                fontsize=8,
-                zorder=5,
-            )
+        # Add node_info to the visualization call
+        # In update_visualizations, replace the final create_arc_diagram call with:
 
-            # Add hover event handling
-
-        # Rest of visualization code remains the same (aspect, limits, etc.)
-        ax_rel.set_aspect("equal")
-        ax_rel.axis("off")
-        ax_rel.set_xlim(-2, 2)
-        ax_rel.set_ylim(-2, 2)
-
-        self.state_figure.tight_layout(pad=1.5)
-        self.state_canvas.draw()
+        # Create and draw arc diagram
+        self.arc_figure.clear()
+        create_arc_diagram(
+            df,
+            source_col="source",
+            target_col="target",
+            weight_col="weight",
+            bg_color="#f5e0c4",
+            cmap="inferno",
+            fig=self.arc_canvas.figure,
+        )
+        self.arc_canvas.draw()
 
         # Store results for history
         self.last_results = results
 
+    # uses planks constant
     def map_frequency_to_elements(self, frequency):
         """Map a frequency to possible atomic elements"""
         matches = []

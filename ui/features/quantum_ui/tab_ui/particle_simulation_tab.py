@@ -116,7 +116,9 @@ class ParticleSimulationTab(QWidget):
         viz_label = QLabel("Visualization Mode:")
         viz_label.setStyleSheet(base_style)
         self.viz_mode = QComboBox()
-        self.viz_mode.addItems(["Velocity", "Position", "Energy", "Quantum State"])
+        self.viz_mode.addItems(
+            ["Velocity", "Position", "Energy", "Quantum State", "Spectral Lines"]
+        )
         self.viz_mode.setToolTip("Select visualization type")
         self.viz_mode.currentTextChanged.connect(self.update_visualization)
         viz_controls.addWidget(viz_label)
@@ -248,6 +250,12 @@ class ParticleSimulationTab(QWidget):
                                     print(
                                         f"Created statevector of length {len(statevector)}"
                                     )
+                                statevector = quantum_data.get("statevector", None)
+                                if statevector is not None:
+                                    quantum_data["phases"] = np.angle(statevector)
+                                    quantum_data["pythagorean_analysis"] = [
+                                        {"harmonic_influence": 1.0}
+                                    ]
 
                         if quantum_data:
                             self.simulator.apply_quantum_data(quantum_data)
@@ -323,9 +331,9 @@ class ParticleSimulationTab(QWidget):
                 self.figure.clear()
                 self.ax = self.figure.add_subplot(111, projection="3d")
                 self.ax.set_facecolor(COLORS["background"])
-                self.ax.set_xlim(-8, 8)
-                self.ax.set_ylim(-8, 8)
-                self.ax.set_zlim(-8, 8)
+                self.ax.set_xlim(-15, 15)  # previously 8
+                self.ax.set_ylim(-15, 15)
+                self.ax.set_zlim(-15, 15)
                 self.ax.grid(True)
                 self.ax.set_position(
                     [0.1, 0.1, 0.8, 0.8]
@@ -399,33 +407,6 @@ class ParticleSimulationTab(QWidget):
         except Exception as e:
             self.quantum_data_text.setText(f"Error updating quantum display: {str(e)}")
 
-    # def _get_colors(self, positions, velocities):
-    #     """Get colors based on current visualization mode"""
-    #     if self.current_mode == "Velocity":
-    #         return np.linalg.norm(velocities, axis=1)
-    #     elif self.current_mode == "Position":
-    #         return np.linalg.norm(positions, axis=1)
-    #     elif self.current_mode == "Energy":
-    #         return 0.5 * np.sum(velocities**2, axis=1)
-    #     else:  # Quantum State
-    #         if self.simulator.quantum_data:
-    #             # Get statevector and ensure it matches particle count
-    #             statevector = self.simulator.quantum_data.get(
-    #                 "statevector", np.zeros(len(positions))
-    #             )
-    #             # Tile the statevector to match particle count
-    #             if len(statevector) != len(positions):
-    #                 statevector = np.tile(
-    #                     statevector,
-    #                     (len(positions) + len(statevector) - 1) // len(statevector),
-    #                 )[: len(positions)]
-    #             # Scale the values to be visible (they might be very small)
-    #             values = np.abs(statevector)
-    #             if values.max() > 0:  # Normalize only if we have non-zero values
-    #                 values = values / values.max()
-    #             return values
-    #         return np.zeros(len(positions))  # Default if no quantum data
-
     def apply_quantum_data(self, quantum_data):
         """Apply quantum melody analysis data to particle simulation"""
         self.quantum_data = quantum_data
@@ -439,7 +420,13 @@ class ParticleSimulationTab(QWidget):
 
     def _get_colors(self, positions, velocities):
         """Get colors based on current visualization mode"""
-        if self.current_mode == "Velocity":
+        if self.current_mode == "Spectral Lines":
+            hist = self._calculate_spectral_lines(positions, velocities)
+            self._update_spectral_display()
+            if hist is not None:
+                return hist
+            return np.zeros(len(positions))
+        elif self.current_mode == "Velocity":
             return np.linalg.norm(velocities, axis=1)
         elif self.current_mode == "Position":
             return np.linalg.norm(positions, axis=1)
@@ -477,3 +464,20 @@ class ParticleSimulationTab(QWidget):
                 return np.zeros(len(positions))
 
             return np.zeros(len(positions))
+
+    def _calculate_spectral_lines(self, positions, velocities):
+        kinetic = 0.5 * np.sum(velocities**2, axis=1)
+        potential = np.sum(positions**2, axis=1)
+        total_energy = kinetic + potential
+        hist, _ = np.histogram(total_energy, bins=len(positions), density=True)
+        return hist
+
+    def _update_spectral_display(self):
+        """Update the spectral visualization"""
+        if self.current_mode == "Spectral Lines":
+            self.ax.set_xlabel("Energy Level")
+            self.ax.set_ylabel("Intensity")
+            self.ax.set_zlabel("Height")
+            self.ax.set_xlim(-15, 15)
+            self.ax.set_ylim(-15, 15)
+            self.ax.set_zlim(-15, 15)

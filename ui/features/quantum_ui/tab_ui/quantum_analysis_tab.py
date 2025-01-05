@@ -307,7 +307,7 @@ class QuantumAnalysisTab(QWidget):
 
             # Store in data manager
             quantum_results = {
-                "frequencies": dominant_frequencies.tolist(),
+                "frequencies": dominant_frequencies.tolist(),  # Already there
                 "amplitudes": dominant_amplitudes.tolist(),
                 "noise_levels": {
                     "internal": internal_noise,
@@ -315,9 +315,17 @@ class QuantumAnalysisTab(QWidget):
                 },
                 "analysis_results": results,
                 "sample_rate": self.sample_rate,
-                "statevector": results.get("statevector", []),  # Add statevector
+                "statevector": results.get("statevector", []),
                 "purity": results.get("purity", 0),
                 "fidelity": results.get("fidelity", 0),
+                "quantum_metrics": {  # Add this
+                    "purity": results.get("purity", 0),
+                    "fidelity": results.get("fidelity", 0),
+                },
+                "phases": np.angle(results.get("statevector", [])),  # Add this
+                "pythagorean_analysis": results.get(
+                    "pythagorean_analysis", [{"harmonic_influence": 1.0}]
+                ),  # Add this
             }
             self.data_manager.update_quantum_results(quantum_results)
 
