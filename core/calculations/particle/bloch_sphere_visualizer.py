@@ -441,86 +441,167 @@ class BlochSphereVisualizer:
 
                 print(f"DEBUG: Computed Bloch coordinates: (x={x}, y={y}, z={z})")
 
-                # Visualization with mutex protection
-                with QMutexLocker(self._canvas_mutex):
-                    # ... (existing visualization code)
+            with QMutexLocker(self._canvas_mutex):
+                # Check canvas is still valid
+                if not hasattr(self, "_canvas") or self._canvas is None:
+                    print("ERROR: Canvas has been deleted during visualization")
+                    return False
 
-                    # Add this block just before returning
-                    # Prepare state information text
-                    state_info_text = f"Timestep: {timestep}\n"
+                # Define background color
+                background_color = "#1f2f4a"
 
-                    if frequencies:
-                        # Get top frequencies
-                        top_freq_indices = np.argsort(frequencies)[-3:][::-1]
-                        top_frequencies = [frequencies[i] for i in top_freq_indices]
+                try:
+                    # Recreate the Bloch sphere
+                    if not hasattr(self, "figure") or self.figure is None:
+                        print("ERROR: Figure has been deleted")
+                        return False
 
-                        state_info_text += "Top Frequencies:\n"
-                        for i, freq in enumerate(top_frequencies, 1):
-                            state_info_text += f"{i}. {freq:.2f} Hz\n"
+                    self.figure.clear()
+                    ax = self.figure.add_subplot(111, projection="3d")
 
-                    # Add state vector information
-                    state_info_text += "\nState Vector:\n"
-                    state_info_text += f"x: {x:.4f}\n"
-                    state_info_text += f"y: {y:.4f}\n"
-                    state_info_text += f"z: {z:.4f}\n"
+                    # Set background color
+                    ax.set_facecolor(background_color)
+                    self.figure.patch.set_facecolor(background_color)
 
-                    # Add purity and fidelity if available
-                    purity = quantum_data.get("purity", 0)
-                    fidelity = quantum_data.get("fidelity", 0)
-                    state_info_text += f"\nPurity: {purity:.4f}\n"
-                    state_info_text += f"Fidelity: {fidelity:.4f}"
+                    # Create sphere wireframe
+                    u = np.linspace(0, 2 * np.pi, 100)
+                    v = np.linspace(0, np.pi, 100)
+                    sphere_x = np.outer(np.cos(u), np.sin(v))
+                    sphere_y = np.outer(np.sin(u), np.sin(v))
+                    sphere_z = np.outer(np.ones(np.size(u)), np.cos(v))
 
-                    # Add text to the figure
-                    self.figure.text(
-                        0.02,
-                        0.02,  # Lower left corner
-                        state_info_text,
-                        color="white",
-                        fontsize=8,
-                        transform=self.figure.transFigure,
-                        verticalalignment="bottom",
-                        bbox=dict(facecolor="#162030", alpha=0.7, edgecolor="none"),
+                    # Plot wireframe sphere
+                    ax.plot_wireframe(
+                        sphere_x,
+                        sphere_y,
+                        sphere_z,
+                        color="gray",
+                        alpha=0.2,
+                        linewidth=0.5,
                     )
+
+                    # Set sphere properties
+                    ax.set_xlabel("X", color="white")
+                    ax.set_ylabel("Y", color="white")
+                    ax.set_zlabel("Z", color="white")
+
+                    # Set limits to ensure full sphere is visible
+                    ax.set_xlim([-1.2, 1.2])
+                    ax.set_ylim([-1.2, 1.2])
+                    ax.set_zlim([-1.2, 1.2])
+
+                    # Add basis state labels
+                    ax.text(0, 0, 1.1, "|0⟩", color="white", ha="center", va="bottom")
+                    ax.text(0, 0, -1.1, "|1⟩", color="white", ha="center", va="top")
+
+                    # Reset or initialize trajectory history if it doesn't exist
+                    if not hasattr(self, "trajectory_history"):
+                        self.trajectory_history = {"x": [], "y": [], "z": []}
+
+                    # Add current point to trajectory history
+                    self.trajectory_history["x"].append(x)
+                    self.trajectory_history["y"].append(y)
+                    self.trajectory_history["z"].append(z)
+
+                    # Limit trajectory history
+                    max_trail = 50
+                    if len(self.trajectory_history["x"]) > max_trail:
+                        self.trajectory_history["x"] = self.trajectory_history["x"][
+                            -max_trail:
+                        ]
+                        self.trajectory_history["y"] = self.trajectory_history["y"][
+                            -max_trail:
+                        ]
+                        self.trajectory_history["z"] = self.trajectory_history["z"][
+                            -max_trail:
+                        ]
+
+                    # Plot quantum state point (red)
+                    ax.scatter(x, y, z, color="red", s=100, label="Quantum State")
+
+                    # Plot trajectory (green)
+                    ax.plot(
+                        self.trajectory_history["x"],
+                        self.trajectory_history["y"],
+                        self.trajectory_history["z"],
+                        color="green",
+                        linewidth=2,
+                        alpha=0.7,
+                        label="State Trajectory",
+                    )
+
+                    # Add legend and customize colors
+                    ax.legend(
+                        loc="upper right",
+                        facecolor="#162030",
+                        edgecolor="white",
+                        framealpha=0.7,
+                    )
+                    plt.setp(ax.get_legend().get_texts(), color="white")
+
+                    # Customize axis
+                    ax.grid(False)
+                    ax.set_box_aspect([1, 1, 1])  # Equal aspect ratio
+
+                    # Force canvas update
+                    try:
+                        if not hasattr(self, "_canvas") or self._canvas is None:
+                            print("ERROR: Canvas has been deleted before drawing")
+                            return False
+
+                        # Use draw_idle to prevent blocking
+                        from PyQt6.QtCore import QTimer
+
+                        QTimer.singleShot(0, self._canvas.draw)
+                    except Exception as draw_error:
+                        print(f"Error drawing canvas: {draw_error}")
+                        return False
 
                     return True
 
-            frequencies = quantum_data.get("quantum_frequencies", [])
+                except Exception as viz_error:
+                    print(f"CRITICAL ERROR in Bloch sphere visualization: {viz_error}")
+                    traceback.print_exc()
+                    return False
 
-            # Prepare state information text
-            state_info_text = f"Timestep: {timestep}\n"
+                frequencies = quantum_data.get("quantum_frequencies", [])
+                # Prepare state information text
+                state_info_text = f"Timestep: {timestep}\n"
 
-            if frequencies:
-                # Get top frequencies
-                top_freq_indices = np.argsort(frequencies)[-3:][::-1]
-                top_frequencies = [frequencies[i] for i in top_freq_indices]
+                if frequencies:
+                    # Get top frequencies
+                    top_freq_indices = np.argsort(frequencies)[-3:][::-1]
+                    top_frequencies = [frequencies[i] for i in top_freq_indices]
 
-                state_info_text += "Top Frequencies:\n"
-                for i, freq in enumerate(top_frequencies, 1):
-                    state_info_text += f"{i}. {freq:.2f} Hz\n"
+                    state_info_text += "Top Frequencies:\n"
+                    for i, freq in enumerate(top_frequencies, 1):
+                        state_info_text += f"{i}. {freq:.2f} Hz\n"
 
-            # Add state vector information
-            state_info_text += "\nState Vector:\n"
-            state_info_text += f"x: {x:.4f}\n"
-            state_info_text += f"y: {y:.4f}\n"
-            state_info_text += f"z: {z:.4f}\n"
+                # Add state vector information
+                state_info_text += "\nState Vector:\n"
+                state_info_text += f"x: {x:.4f}\n"
+                state_info_text += f"y: {y:.4f}\n"
+                state_info_text += f"z: {z:.4f}\n"
 
-            # Add purity and fidelity if available
-            purity = quantum_data.get("purity", 0)
-            fidelity = quantum_data.get("fidelity", 0)
-            state_info_text += f"\nPurity: {purity:.4f}\n"
-            state_info_text += f"Fidelity: {fidelity:.4f}"
+                # Add purity and fidelity if available
+                purity = quantum_data.get("purity", 0)
+                fidelity = quantum_data.get("fidelity", 0)
+                state_info_text += f"\nPurity: {purity:.4f}\n"
+                state_info_text += f"Fidelity: {fidelity:.4f}"
 
-            # Add text to the figure
-            self.figure.text(
-                0.02,
-                0.02,  # Lower left corner
-                state_info_text,
-                color="white",
-                fontsize=8,
-                transform=self.figure.transFigure,
-                verticalalignment="bottom",
-                bbox=dict(facecolor="#162030", alpha=0.7, edgecolor="none"),
-            )
+                # Add text to the figure
+                self.figure.text(
+                    0.02,
+                    0.02,  # Lower left corner
+                    state_info_text,
+                    color="white",
+                    fontsize=8,
+                    transform=self.figure.transFigure,
+                    verticalalignment="bottom",
+                    bbox=dict(facecolor="#162030", alpha=0.7, edgecolor="none"),
+                )
+
+                return True
 
         except Exception as e:
             print(f"FATAL ERROR in update_for_timestep: {e}")
