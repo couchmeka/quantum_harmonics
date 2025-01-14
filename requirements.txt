@@ -1,0 +1,18 @@
+# Core scientific and mathematical libraries
+numpy==1.23.1
+scipy==1.9.0
+matplotlib==3.5.1
+
+# Quantum computing framework
+qiskit==0.39.0
+
+# PyQt for GUI applications
+PyQt6==6.2.3
+
+# Additional libraries for advanced visualization
+qtawesome==1.2.3
+PyQt6-sip==13.5.0
+
+# Libraries for noise modeling and simulation
+qiskit_aer==0.11.0
+
