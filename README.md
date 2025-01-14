@@ -7,7 +7,8 @@ Welcome to **Quantum Harmonics**, a cutting-edge interdisciplinary platform that
 ---
 ## 🌌 Use Cases: Bridging Quantum, Music, and Physics 🌟
 
-This platform uniquely integrates quantum mechanics, music theory, and fluid dynamics to enable groundbreaking research, education, and simulations. Below are the key use cases and features that make this system a truly innovative solution:
+### ***THIS PROJECT IS STILL UNDER DEVELOPMENT
+#### 
 
 ---
 
@@ -111,4 +112,32 @@ This platform uniquely integrates quantum mechanics, music theory, and fluid dyn
 1. Clone the repository:  
    ```bash
    git clone https://github.com/yourusername/quantum-harmonics.git
+   
+## 📸 Screenshots and Visuals
+
+Here are some screenshots showcasing the features of **Quantum Harmonics**:
+
+### 1. Visualization Details
+![Screen 1](graphics/screens1.png)
+
+### 2. QSphere
+![Screen 2](graphics/screens2.png)
+
+### 3. Musical Harmonic Analysis
+![Screen 3](graphics/screens3.png)
+
+### 4. Circuit and Material Analysis
+![Screen 4](graphics/screens4.png)
+
+### 5. Quantum State Energy Dynamics
+![Screen 5](graphics/screens5.png)
+
+### 6. Fluid Dynamics
+![Screen 6](graphics/screens6.png)
+
+### 7. AI and Machine Learning Analysis
+![Screen 7](graphics/screens8.jpg)
+
+
+
 
