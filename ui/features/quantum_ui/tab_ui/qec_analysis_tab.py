@@ -1,5 +1,4 @@
 import traceback
-
 import numpy as np
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -260,8 +259,6 @@ class QECAnalysisTab(QWidget):
         # Set the layout
         self.setLayout(layout)
 
-    # In QECAnalysisTab's run_analysis method:
-
     def run_analysis(self):
         try:
             qec_type = self.qec_selector.currentText()
@@ -468,7 +465,6 @@ class QECAnalysisTab(QWidget):
         except Exception as e:
             self.results_text.append(f"Error importing fluid data: {str(e)}")
 
-    # In QECAnalysisTab:
     def import_quantum_data(self, quantum_data):
         try:
             if not quantum_data:

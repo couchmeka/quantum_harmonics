@@ -22,6 +22,7 @@ from qiskit.visualization import plot_bloch_multivector
 from qiskit.visualization.exceptions import VisualizationError
 from qiskit.quantum_info import Statevector
 from ui.styles_ui.styles import *
+from core.calculations.particle.blochsphere_manager import BlochSphereManager
 
 
 class ParticleSimulationTab(QWidget):
@@ -121,7 +122,6 @@ class ParticleSimulationTab(QWidget):
         self.viz_mode.setToolTip("Select visualization type")
         self.viz_mode.currentTextChanged.connect(self.update_visualization)
 
-        # In setup_ui method, add this after self.viz_mode combobox setup:
         self.viz_style = QComboBox()
         self.viz_style.addItems(["Particle Simulation", "Bloch Sphere"])
         self.viz_style.setToolTip("Select visualization style")
@@ -165,14 +165,16 @@ class ParticleSimulationTab(QWidget):
         top_controls.addWidget(self.toggle_button)
         controls_layout.addLayout(top_controls)
 
-        # Second row of controls
         viz_controls = QHBoxLayout()
         viz_label = QLabel("Visualization Mode:")
         viz_label.setStyleSheet(base_style)
         viz_controls.addWidget(viz_label)
         viz_controls.addWidget(self.viz_mode)
-        # Add the new combobox to viz_controls layout
-        viz_controls.addWidget(QLabel("Visualization Style:"))
+
+        # Create a styled label for Visualization Style
+        style_label = QLabel("Visualization Style:")
+        style_label.setStyleSheet(base_style)  # Use the same base_style
+        viz_controls.addWidget(style_label)
         viz_controls.addWidget(self.viz_style)
 
         speed_layout = QHBoxLayout()
@@ -194,12 +196,19 @@ class ParticleSimulationTab(QWidget):
         # Left: Visualization
         viz_container = QWidget()
         viz_layout = QVBoxLayout(viz_container)
+
+        # Add object names for easier identification
         canvas_group = create_group_box("Visualization")
+        canvas_group.setObjectName("canvas_group")
+
         canvas_layout = QVBoxLayout()
+        canvas_layout.setObjectName("canvas_layout")  # Add object name
+
         canvas_layout.addWidget(self.canvas, alignment=Qt.AlignmentFlag.AlignCenter)
         self.canvas.setMinimumHeight(400)
         canvas_layout.setContentsMargins(0, 0, 0, 20)
         canvas_group.setLayout(canvas_layout)
+
         viz_layout.addWidget(canvas_group)
         content_layout.addWidget(viz_container, stretch=5)
 
@@ -240,10 +249,7 @@ class ParticleSimulationTab(QWidget):
         self.time_slider.setMaximum(100)  # Will be updated when data loads
         self.time_slider.setValue(0)
         self.time_slider.setToolTip("Time step")
-        # In setup_ui, change this line:
-        self.time_slider.valueChanged.connect(
-            self.update_timestep
-        )  # Changed from update_time_step
+        self.time_slider.valueChanged.connect(self.update_timestep)
         time_controls.addWidget(self.time_slider)
 
         # Step forward button
@@ -432,40 +438,111 @@ class ParticleSimulationTab(QWidget):
         self.quantum_data_text.clear()
         self.data_source.setCurrentText("Particle Simulation")
 
-    def reset(self):
-        """Reset particles to initial state"""
-        self.positions = np.random.randn(self.num_particles, 3) * 5
-        self.velocities = np.random.randn(self.num_particles, 3) * 0.1
-        self.accelerations = np.zeros((self.num_particles, 3))
-        self.time = 0.0
+    def update(self, dt=0.01, fluid_forces=None):
+        """Update particle positions and velocities with harmonic oscillator behavior"""
+        # Harmonic oscillator parameters
+        omega = 2.0  # Angular frequency
+        k = omega**2  # Spring constant
 
-    def update(self, dt=None):
-        """Update particle positions and velocities"""
-        if dt is not None:
-            self.dt = dt
+        if self.use_mps:
+            # GPU version
+            # Calculate harmonic oscillator forces: F = -kx
+            harmonic_forces = -k * self.positions
 
-        # Apply quantum oscillations if available
-        if hasattr(self, "base_frequencies") and hasattr(self, "oscillation_phases"):
-            time_factor = np.cos(
-                2 * np.pi * self.base_frequencies * self.time + self.oscillation_phases
+            # Add to accelerations
+            self.accelerations = harmonic_forces
+            if fluid_forces is not None:
+                self.accelerations += fluid_forces
+
+            # Update velocities (half-step)
+            self.velocities += 0.5 * self.accelerations * dt
+
+            # Update positions
+            self.positions += self.velocities * dt
+
+            # Update velocities (half-step)
+            self.velocities += 0.5 * self.accelerations * dt
+
+            # Add quantum effects
+            if hasattr(self, "quantum_data") and self.quantum_data:
+                self.apply_quantum_effects(dt)
+
+            # Keep particles within bounds
+            self.positions = torch.clamp(self.positions, -8, 8)
+
+            # Convert to NumPy for visualization
+            return (
+                self.positions.cpu().numpy(),
+                self.velocities.cpu().numpy(),
+                self.accelerations.cpu().numpy(),
             )
-            self.velocities += 0.1 * time_factor[:, np.newaxis] * self.positions
+        else:
+            # CPU version
+            # Calculate harmonic oscillator forces: F = -kx
+            harmonic_forces = -k * self.positions
 
-        # Update positions and velocities
-        self.positions += self.velocities * self.dt
-        self.velocities += self.accelerations * self.dt
+            # Add to accelerations
+            self.accelerations = harmonic_forces
+            if fluid_forces is not None:
+                self.accelerations += fluid_forces
 
-        # Add some damping
-        self.velocities *= 0.99
+            # Update velocities (half-step)
+            self.velocities += 0.5 * self.accelerations * dt
 
-        # Keep particles in bounds
-        bound = 15.0
-        self.positions = np.clip(self.positions, -bound, bound)
+            # Update positions
+            self.positions += self.velocities * dt
 
-        self.time += self.dt
-        return self.positions, self.velocities, self.accelerations
+            # Update velocities (half-step)
+            self.velocities += 0.5 * self.accelerations * dt
 
-    # This is where storage is stored
+            # Add quantum effects
+            if hasattr(self, "quantum_data") and self.quantum_data:
+                self.apply_quantum_effects(dt)
+
+            # Keep particles within bounds
+            self.positions = np.clip(self.positions, -8, 8)
+
+            return self.positions, self.velocities, self.accelerations
+
+    def apply_quantum_effects(self, dt):
+        """Apply quantum effects to the harmonic oscillator"""
+        if not self.quantum_data:
+            return
+
+        # Extract quantum parameters
+        frequencies = self.quantum_data.get("quantum_frequencies", [1.0])
+        phases = self.quantum_data.get("phases", [0.0])
+
+        if self.use_mps:
+            # Create frequency and phase fields for all particles
+            freq_field = torch.tensor(frequencies, device=self.device).repeat(
+                (self.num_particles + len(frequencies) - 1) // len(frequencies)
+            )[: self.num_particles]
+
+            phase_field = torch.tensor(phases, device=self.device).repeat(
+                (self.num_particles + len(phases) - 1) // len(phases)
+            )[: self.num_particles]
+
+            # Apply quantum oscillations
+            time = dt * self.animation_frame
+            oscillation = torch.sin(2 * np.pi * freq_field * time + phase_field)
+            self.positions *= 1 + 0.1 * oscillation.unsqueeze(1)
+
+        else:
+            # Create frequency and phase fields for all particles
+            freq_field = np.tile(
+                frequencies,
+                (self.num_particles + len(frequencies) - 1) // len(frequencies),
+            )[: self.num_particles]
+            phase_field = np.tile(
+                phases, (self.num_particles + len(phases) - 1) // len(phases)
+            )[: self.num_particles]
+
+            # Apply quantum oscillations
+            time = dt * self.animation_frame
+            oscillation = np.sin(2 * np.pi * freq_field * time + phase_field)
+            self.positions *= 1 + 0.1 * oscillation[:, np.newaxis]
+
     def update_simulation(self):
         try:
             with QMutexLocker(self._canvas_mutex):
@@ -582,7 +659,6 @@ class ParticleSimulationTab(QWidget):
             self.timer.stop()
 
     def _update_quantum_display(self, quantum_data):
-        """Helper method to update the quantum data display"""
         try:
             display_text = []
 
@@ -603,47 +679,91 @@ class ParticleSimulationTab(QWidget):
                     f"Frequency range: {min(freqs):.2f} Hz - {max(freqs):.2f} Hz"
                 )
 
+                # Add top 3 frequencies
+                top_freq_indices = np.argsort(freqs)[-3:][::-1]
+                top_frequencies = [freqs[i] for i in top_freq_indices]
+                display_text.append("Top Frequencies:")
+                for i, freq in enumerate(top_frequencies, 1):
+                    display_text.append(f"  {i}. {freq:.2f} Hz")
+
             if phases:
                 display_text.append(f"Phase components: {len(phases)}")
 
+            # Bloch Sphere Guide (if in Bloch Sphere mode)
             if self.viz_style and self.viz_style.currentText() == "Bloch Sphere":
-                display_text.append("=== Bloch Sphere Visualization Guide ===")
-                display_text.append("• Red dot: Current quantum state")
-                display_text.append("• Green line: Path of state evolution")
-                display_text.append("• Sphere coordinates show quantum superposition:")
-                display_text.append("  - North pole (z=1): Pure |0⟩ state")
-                display_text.append("  - South pole (z=-1): Pure |1⟩ state")
-                display_text.append("  - Equator: Equal superposition")
-                display_text.append("  - Front (x=1): |+⟩ state")
-                display_text.append("  - Back (x=-1): |-⟩ state")
-                display_text.append("  - Right (y=1): |i+⟩ state")
-                display_text.append("  - Left (y=-1): |i-⟩ state")
-                display_text.append("\nCurrent state coordinates are shown on the plot")
-            # Bloch sphere coordinates
-            if self.viz_style and self.viz_style.currentText() == "Bloch Sphere":
-                display_text.append("\n=== Bloch Sphere State ===")
-                display_text.append(
-                    "The Bloch sphere represents a quantum state as a point on a unit sphere:"
-                )
-                display_text.append("• |0⟩ state is at the north pole (z = 1)")
-                display_text.append("• |1⟩ state is at the south pole (z = -1)")
-                display_text.append("• Superposition states lie between poles")
-                display_text.append("• The green trajectory shows state evolution")
-                display_text.append("\nCurrent coordinates shown in state text")
-
-            # Musical systems if present
-            if "harmony_data" in quantum_data:
-                display_text.append("\n=== Musical Analysis ===")
-                for system, notes in (
-                    quantum_data["harmony_data"].get("musical_systems", {}).items()
-                ):
-                    display_text.append(f"{system}: {', '.join(notes)}")
+                display_text.append("\n=== Bloch Sphere Visualization Guide ===")
+                display_text.append("Bloch Sphere Coordinates:")
+                display_text.append("• x-axis: Superposition between |0⟩ and |1⟩")
+                display_text.append("• y-axis: Quantum phase difference")
+                display_text.append("• z-axis: Relative population of basis states")
+                display_text.append("\nState Interpretation:")
+                display_text.append("• North Pole (z=1): Pure |0⟩ state")
+                display_text.append("• South Pole (z=-1): Pure |1⟩ state")
+                display_text.append("• Equator: Equal superposition")
+                display_text.append("• Position shows quantum state probability")
 
             self.quantum_data_text.setText("\n".join(display_text))
             self.data_source.setCurrentText("Quantum Data")
 
         except Exception as e:
             self.quantum_data_text.setText(f"Error updating quantum display: {str(e)}")
+
+    def calculate_bloch_coordinates(statevector):
+        """
+        Advanced method to project a multi-dimensional statevector onto Bloch sphere
+
+        Args:
+            statevector (list or np.array): Quantum state vector
+
+        Returns:
+            tuple: (x, y, z) coordinates on Bloch sphere
+        """
+        # Convert to numpy array for robust processing
+        try:
+            statevector = np.array(statevector, dtype=complex)
+
+            # Print diagnostic information
+            print(f"Statevector length: {len(statevector)}")
+            print(f"Statevector magnitudes: {np.abs(statevector)}")
+
+            # Strategy 1: Use principal component analysis (PCA)
+            try:
+                from sklearn.decomposition import PCA
+
+                # Compute magnitudes and phases
+                magnitudes = np.abs(statevector)
+                phases = np.angle(statevector)
+
+                # Combine magnitudes and phases for PCA
+                combined_data = np.column_stack([magnitudes, phases])
+
+                # Perform PCA to reduce dimensionality
+                pca = PCA(n_components=3)
+                reduced_data = pca.fit_transform(combined_data)
+
+                # Normalize reduced data
+                x, y, z = reduced_data[0] / np.linalg.norm(reduced_data[0])
+
+                print(f"PCA-based Bloch coordinates: ({x}, {y}, {z})")
+                return x, y, z
+
+            except ImportError:
+                # Fallback strategy without PCA
+                # Strategy 2: Use top 2-3 largest magnitude components
+                top_indices = np.argsort(np.abs(statevector))[-3:]
+                top_components = statevector[top_indices]
+
+                # Compute simplified Bloch coordinates
+                x = 2 * np.real(top_components[0] * np.conj(top_components[1]))
+                y = 2 * np.imag(top_components[0] * np.conj(top_components[1]))
+                z = np.abs(top_components[0]) ** 2 - np.abs(top_components[1]) ** 2
+
+                print(f"Top-component Bloch coordinates: ({x}, {y}, {z})")
+                return x, y, z
+
+        except Exception as e:
+            print(f"Error in Bloch coordinate calculation: {e}")
+            return 0, 0, 1
 
     def _get_colors(self, positions, velocities):
         try:
@@ -715,10 +835,9 @@ class ParticleSimulationTab(QWidget):
 
     def closeEvent(self, event):
         try:
-            # Stop all animations first
+            # Stop animations first
             if hasattr(self, "timer") and self.timer is not None:
                 self.timer.stop()
-                self.timer.timeout.disconnect()
 
             with QMutexLocker(self._canvas_mutex):
                 # Clean up matplotlib resources
@@ -735,7 +854,10 @@ class ParticleSimulationTab(QWidget):
                     hasattr(self, "bloch_visualizer")
                     and self.bloch_visualizer is not None
                 ):
-                    self.bloch_visualizer.cleanup()
+                    try:
+                        self.bloch_visualizer.cleanup()
+                    except AttributeError:
+                        print("Warning: BlochSphereVisualizer cleanup skipped")
                     self.bloch_visualizer = None
 
             # Finally delete the canvas
@@ -746,6 +868,7 @@ class ParticleSimulationTab(QWidget):
             super().closeEvent(event)
         except Exception as e:
             print(f"Error during cleanup: {e}")
+            traceback.print_exc()
 
     def hideEvent(self, event):
         """Handle cleanup when widget is hidden"""
@@ -766,14 +889,28 @@ class ParticleSimulationTab(QWidget):
                 self.timer.start(self.animation_speed)
 
     def _cleanup_qt_objects(self):
-        if hasattr(self, "timer") and self.timer is not None:
-            self.timer.stop()
-            self.timer.deleteLater()
-        if hasattr(self, "bloch_visualizer") and self.bloch_visualizer is not None:
-            self.bloch_visualizer.cleanup()  # Call cleanup here
-            self.bloch_visualizer = None
-        if hasattr(self, "figure") and self.figure is not None:
-            plt.close(self.figure)
+        try:
+            if hasattr(self, "timer") and self.timer is not None:
+                self.timer.stop()
+                self.timer.deleteLater()
+
+            # Cleanup Bloch visualizer
+            if hasattr(self, "bloch_visualizer") and self.bloch_visualizer is not None:
+                try:
+                    self.bloch_visualizer.cleanup()
+                except AttributeError:
+                    print("Warning: BlochSphereVisualizer cleanup skipped")
+                self.bloch_visualizer = None
+
+            # Cleanup figure
+            if hasattr(self, "figure") and self.figure is not None:
+                plt.close(self.figure)
+                self.figure = None
+
+            print("Qt objects cleanup completed")
+        except Exception as e:
+            print(f"Warning in cleanup: {e}")
+            traceback.print_exc()
 
     def safe_update_simulation(self):
         """Wrapper for update_simulation with better error handling"""
@@ -900,130 +1037,269 @@ class ParticleSimulationTab(QWidget):
             traceback.print_exc()
 
     def setup_bloch_visualizer(self):
-        """Initialize Bloch sphere visualizer."""
+        """Initialize Bloch sphere visualization"""
+        print("Setting up Bloch visualizer...")
+
         try:
-            print("Setting up Bloch visualizer...")
-
-            # Ensure figure and canvas are initialized
-            if not hasattr(self, "figure") or not hasattr(self, "canvas"):
-                print("Figure or canvas not initialized. Creating new instances.")
-                self.figure = Figure(figsize=(8, 8))
-                self.canvas = FigureCanvas(self.figure)
-
-            # Clear the figure
-            self.figure.clear()
-
-            # Initialize the Bloch visualizer with current figure
-            self.bloch_visualizer = BlochSphereVisualizer(
-                self.data_manager, self.figure, self.canvas
+            # Create new Bloch manager with proper parent widget
+            manager = BlochSphereManager(
+                parent_widget=self.canvas.parent(), data_manager=self.data_manager
             )
 
-            print("Bloch visualizer setup complete.")
-            return True
+            # Create visualizer with manager
+            self.bloch_visualizer = BlochSphereVisualizer(
+                data_manager=self.data_manager,
+                figure=manager.figure,
+                canvas=manager.canvas,
+            )
 
+            # Store manager reference
+            self.bloch_visualizer.manager = manager
+
+            # Update canvas
+            self._update_canvas_widget(manager.canvas)
+
+            return True
         except Exception as e:
-            print(f"Error setting up Bloch visualizer: {str(e)}")
+            print(f"Error setting up Bloch visualizer: {e}")
             traceback.print_exc()
             return False
 
     def change_visualization_style(self, style):
-        """Switch between visualization styles"""
         try:
-            print(f"Changing visualization style to: {style}")
+            print(f"DEBUG: Attempting to change visualization style to: {style}")
 
-            # Stop any running animation first
-            if self.timer.isActive():
+            # Debug imports
+            try:
+                from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+
+                print("DEBUG: FigureCanvasQTAgg successfully imported")
+            except ImportError as import_error:
+                print(f"CRITICAL IMPORT ERROR: {import_error}")
+                return False
+
+            # Track if animation was running
+            was_running = False
+            if hasattr(self, "timer") and self.timer and self.timer.isActive():
+                was_running = True
                 self.timer.stop()
 
             if style == "Bloch Sphere":
-                # Update UI
-                self.previous_viz_mode = self.viz_mode.currentText()
-                self.viz_mode.blockSignals(True)
-                self.viz_mode.clear()
-                self.viz_mode.addItem("Quantum State")
-                self.viz_mode.setCurrentText("Quantum State")
-                self.viz_mode.blockSignals(False)
+                # Ensure figure is created
+                if not hasattr(self, "_bloch_figure") or self._bloch_figure is None:
+                    print("DEBUG: Creating new Bloch figure")
+                    self._bloch_figure = Figure(figsize=(8, 8))
+                    self._bloch_figure.patch.set_facecolor(COLORS["background"])
+                else:
+                    print("DEBUG: Existing Bloch figure found")
 
-                # Clean up existing visualizer if it exists
-                if (
-                    hasattr(self, "bloch_visualizer")
-                    and self.bloch_visualizer is not None
-                ):
-                    self.bloch_visualizer.cleanup()
-
-                # Create new Bloch visualizer
-                success = self.setup_bloch_visualizer()
-                if not success:
-                    print("Failed to setup Bloch visualizer")
-                    return
-
-                # Connect timer to Bloch visualization update
+                # Create or use existing canvas
                 try:
-                    self.timer.timeout.disconnect()
-                except:
-                    pass
-                self.timer.timeout.connect(self.update_bloch_visualization)
-                self.timer.setInterval(100)  # Slower updates for Bloch sphere
+                    if not hasattr(self, "_bloch_canvas") or self._bloch_canvas is None:
+                        print("DEBUG: Creating new Bloch canvas")
+                        # Explicitly import and use FigureCanvasQTAgg
+                        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+
+                        self._bloch_canvas = FigureCanvasQTAgg(self._bloch_figure)
+                        self._bloch_canvas.setParent(self)
+                    else:
+                        print("DEBUG: Existing Bloch canvas found")
+
+                    # Additional canvas verification
+                    print(f"DEBUG: Canvas type: {type(self._bloch_canvas)}")
+                    print(f"DEBUG: Canvas parent: {self._bloch_canvas.parent()}")
+                    print(f"DEBUG: Canvas is visible: {self._bloch_canvas.isVisible()}")
+
+                except Exception as canvas_error:
+                    print(f"CRITICAL ERROR creating canvas: {canvas_error}")
+                    traceback.print_exc()
+                    return False
+
+                # Setup Bloch visualizer
+                try:
+                    # Create Bloch sphere manager
+                    from core.calculations.particle.blochsphere_manager import (
+                        BlochSphereManager,
+                    )
+
+                    manager = BlochSphereManager(
+                        parent_widget=self, data_manager=self.data_manager
+                    )
+
+                    # Create visualizer
+                    self.bloch_visualizer = BlochSphereVisualizer(
+                        data_manager=self.data_manager,
+                        figure=self._bloch_figure,
+                        canvas=self._bloch_canvas,
+                    )
+
+                    # Update canvas in UI
+                    self._update_canvas_widget(self._bloch_canvas)
+
+                    print("DEBUG: Bloch sphere visualizer setup complete")
+
+                except Exception as setup_error:
+                    print(f"CRITICAL ERROR setting up Bloch visualizer: {setup_error}")
+                    traceback.print_exc()
+                    return False
+
+                # Update visualization mode
+                if hasattr(self, "viz_mode"):
+                    try:
+                        self.previous_viz_mode = self.viz_mode.currentText()
+                        self.viz_mode.blockSignals(True)
+                        self.viz_mode.clear()
+                        self.viz_mode.addItem("Quantum State")
+                        self.viz_mode.setCurrentText("Quantum State")
+                        self.viz_mode.blockSignals(False)
+                    except Exception as mode_error:
+                        print(f"Error updating visualization modes: {mode_error}")
+
+                # Update timer
+                if hasattr(self, "timer"):
+                    try:
+                        self.timer.timeout.disconnect()
+                        self.timer.timeout.connect(self.update_bloch_visualization)
+                        self.timer.setInterval(100)
+                    except Exception as timer_error:
+                        print(f"Error updating timer connection: {timer_error}")
+
+                # Ensure current figure and canvas are updated
+                self.figure = self._bloch_figure
+                self.canvas = self._bloch_canvas
 
             else:  # Switch back to Particle Simulation
-                # Clean up Bloch visualizer if it exists
+                # Cleanup Bloch visualizer
                 if (
                     hasattr(self, "bloch_visualizer")
                     and self.bloch_visualizer is not None
                 ):
-                    self.bloch_visualizer.cleanup()
-                    self.bloch_visualizer = None
+                    try:
+                        self.bloch_visualizer.cleanup()
+                    except Exception as cleanup_error:
+                        print(f"Error cleaning up Bloch visualizer: {cleanup_error}")
 
-                # Restore visualization modes
-                self.viz_mode.blockSignals(True)
-                self.viz_mode.clear()
-                self.viz_mode.addItems(
-                    [
-                        "Velocity",
-                        "Position",
-                        "Energy",
-                        "Quantum State",
-                        "Spectral Lines",
-                    ]
-                )
-                if hasattr(self, "previous_viz_mode"):
-                    self.viz_mode.setCurrentText(self.previous_viz_mode)
-                self.viz_mode.blockSignals(False)
-
-                # Clear but don't replace the figure
+                # Reset for particle simulation
                 self.figure.clear()
                 self.ax = self.figure.add_subplot(111, projection="3d")
                 self.ax.set_facecolor(COLORS["background"])
                 self._scatter = None
 
-                # Update timer connection
-                try:
-                    self.timer.timeout.disconnect()
-                except:
-                    pass
+                # Restore particle simulation timer
+                self.timer.timeout.disconnect()
                 self.timer.timeout.connect(self.update_simulation)
-                self.timer.setInterval(self.animation_speed)
 
-            # Restart timer if it was previously running
-            if self.toggle_button.text() == "Stop":
+            # Safely draw canvas
+            if hasattr(self, "canvas"):
+                try:
+                    from PyQt6.QtCore import QTimer
+
+                    QTimer.singleShot(0, self.canvas.draw)
+                except Exception as canvas_draw_error:
+                    print(f"Error drawing canvas: {canvas_draw_error}")
+
+            # Restore timer if it was running
+            if was_running:
                 self.timer.start()
 
+            print("DEBUG: Visualization style change completed successfully")
+            return True
+
         except Exception as e:
-            print(f"Error changing visualization style: {str(e)}")
+            print(f"CRITICAL ERROR changing visualization style: {e}")
+            traceback.print_exc()
+            return False
+
+    def _update_canvas_widget(self, new_canvas):
+        """Update canvas widget in UI"""
+        try:
+            # Find canvas layout
+            canvas_layout = None
+            for child in self.findChildren(QVBoxLayout):
+                if child.objectName() == "canvas_layout":
+                    canvas_layout = child
+                    break
+
+            if canvas_layout:
+                # Remove old canvas widgets
+                while canvas_layout.count():
+                    item = canvas_layout.takeAt(0)
+                    if item.widget():
+                        item.widget().setParent(None)
+                        item.widget().deleteLater()
+
+                # Add new canvas
+                canvas_layout.addWidget(
+                    new_canvas, alignment=Qt.AlignmentFlag.AlignCenter
+                )
+                new_canvas.setMinimumHeight(400)
+
+                # Store new canvas reference
+                self.canvas = new_canvas
+                print("DEBUG: Canvas updated in layout")
+            else:
+                print("DEBUG: No suitable layout found for canvas")
+
+        except Exception as e:
+            print(f"Error updating canvas widget: {e}")
             traceback.print_exc()
 
     def update_bloch_visualization(self):
         """Update Bloch sphere visualization"""
         try:
-            if hasattr(self, "bloch_visualizer") and self.bloch_visualizer:
-                # Get the frame back from the visualization
-                self._animation_frame = (
-                    self.bloch_visualizer.update_animation(self._animation_frame) or 0
-                )
-                self._animation_frame += 1
+            if not hasattr(self, "bloch_visualizer") or self.bloch_visualizer is None:
+                return
+
+            # Get latest quantum data
+            quantum_results = self.data_manager.get_latest_quantum_results()
+            if not quantum_results:
+                return
+
+            # Update through manager
+            if hasattr(self.bloch_visualizer, "manager"):
+                self.bloch_visualizer.manager.update_state()
+
+            self._animation_frame += 1
         except Exception as e:
-            print(f"Error updating Bloch visualization: {str(e)}")
+            print(f"Error updating Bloch visualization: {e}")
             traceback.print_exc()
+
+    def process_quantum_state(quantum_data):
+        """
+        Process quantum data and extract statevector
+
+        Args:
+            quantum_data (dict): Quantum system data
+
+        Returns:
+            tuple: Bloch sphere coordinates
+        """
+        try:
+            # Multiple ways to extract statevector
+            statevector_keys = ["statevector", "amplitudes", "quantum_state"]
+
+            for key in statevector_keys:
+                statevector = quantum_data.get(key)
+                if statevector is not None:
+                    break
+
+            # If no statevector found, try alternative methods
+            if statevector is None:
+                # Check if frequencies can be used
+                frequencies = quantum_data.get("quantum_frequencies")
+                if frequencies:
+                    # Convert frequencies to a pseudo-statevector
+                    statevector = np.sqrt(np.abs(frequencies) / np.sum(frequencies))
+
+            if statevector is None:
+                print("No suitable statevector or frequency data found")
+                return 0, 0, 1
+
+            return calculate_bloch_coordinates(statevector)
+
+        except Exception as e:
+            print(f"Quantum state processing error: {e}")
+            return 0, 0, 1
 
     def update_timestep(self, value):
         """Handle timestep slider value change"""
@@ -1057,19 +1333,86 @@ class ParticleSimulationTab(QWidget):
 
     def step_forward(self):
         """Step forward one timestep"""
-        current = (
-            self.time_slider.value()
-        )  # Changed from timestep_slider to time_slider
-        if current < self.time_slider.maximum():  # Changed here too
-            self.time_slider.setValue(current + 1)
+        try:
+            current = self.time_slider.value()
+            max_value = self.time_slider.maximum()
+
+            if current < max_value:
+                # Temporarily stop animation if running
+                was_active = self.timer.isActive()
+                if was_active:
+                    self.timer.stop()
+
+                # Update slider
+                next_step = current + 1
+                self.time_slider.setValue(next_step)
+
+                # If Bloch Sphere is active, update visualization
+                if (
+                    hasattr(self, "viz_style")
+                    and self.viz_style.currentText() == "Bloch Sphere"
+                    and hasattr(self, "bloch_visualizer")
+                    and self.bloch_visualizer is not None
+                ):
+
+                    try:
+                        # Ensure update_for_timestep method exists and is callable
+                        if hasattr(self.bloch_visualizer, "update_for_timestep"):
+                            self.bloch_visualizer.update_for_timestep(next_step)
+                        else:
+                            print("Warning: update_for_timestep method not found")
+                    except Exception as update_error:
+                        print(f"Error updating Bloch sphere: {update_error}")
+                        traceback.print_exc()
+
+                # Restore animation if it was running
+                if was_active:
+                    self.timer.start()
+
+        except Exception as e:
+            print(f"Critical error in step_forward: {e}")
+            traceback.print_exc()
 
     def step_backward(self):
         """Step backward one timestep"""
-        current = (
-            self.time_slider.value()
-        )  # Changed from timestep_slider to time_slider
-        if current > 0:
-            self.time_slider.setValue(current - 1)
+        try:
+            current = self.time_slider.value()
+
+            if current > 0:
+                # Temporarily stop animation if running
+                was_active = self.timer.isActive()
+                if was_active:
+                    self.timer.stop()
+
+                # Update slider
+                prev_step = current - 1
+                self.time_slider.setValue(prev_step)
+
+                # If Bloch Sphere is active, update visualization
+                if (
+                    hasattr(self, "viz_style")
+                    and self.viz_style.currentText() == "Bloch Sphere"
+                    and hasattr(self, "bloch_visualizer")
+                    and self.bloch_visualizer is not None
+                ):
+
+                    try:
+                        # Ensure update_for_timestep method exists and is callable
+                        if hasattr(self.bloch_visualizer, "update_for_timestep"):
+                            self.bloch_visualizer.update_for_timestep(prev_step)
+                        else:
+                            print("Warning: update_for_timestep method not found")
+                    except Exception as update_error:
+                        print(f"Error updating Bloch sphere: {update_error}")
+                        traceback.print_exc()
+
+                # Restore animation if it was running
+                if was_active:
+                    self.timer.start()
+
+        except Exception as e:
+            print(f"Critical error in step_backward: {e}")
+            traceback.print_exc()
 
     def __del__(self):
         self._cleanup_qt_objects()
